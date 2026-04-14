@@ -4,16 +4,29 @@ Knox is an out-of-process security enforcement plugin for Claude Code. It interc
 
 ## Install
 
-```bash
-# Via Qoris marketplace (once published)
-claude plugin install knox@qoris
+Knox is distributed via the Qoris marketplace. You need to add it once, then install.
 
-# Wire into settings.json permanently (works immediately)
+```bash
+# Step 1 — Add the Qoris marketplace (one-time, per machine)
+claude plugin marketplace add qoris-ai/qoris-marketplace
+
+# Step 2 — Install Knox
+claude plugin install knox@qoris
+```
+
+That's it. Knox is now active in every Claude Code session.
+
+> **Auth note:** Both commands use your existing git credentials. If you have `gh auth login` configured they work as-is. If you hit a permissions error, set `GITHUB_TOKEN=<your-pat>` before running them.
+
+**Other install options:**
+
+```bash
+# Wire hooks directly into ~/.claude/settings.json (no marketplace needed)
 git clone https://github.com/qoris-ai/knox-claude
 cd knox-claude && npm install
 CLAUDE_PLUGIN_ROOT=$(pwd) node bin/knox install
 
-# Local development / one-off session
+# One-off session or local development
 claude --plugin-dir ./knox-claude
 ```
 
