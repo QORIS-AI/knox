@@ -1,0 +1,9 @@
+{
+  "preset": "standard",
+  "description": "Default. Blocks pipe-to-shell, bash -c, eval, exfiltration. Sanitizes sudo.",
+  "escalation": { "session_threshold": 3, "agent_threshold": 10 },
+  "audit": { "include_allowed": false },
+  "sanitize_sudo": true,
+  "script_inspection": true,
+  "use_ask_not_deny": false
+}

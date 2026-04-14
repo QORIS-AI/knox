@@ -1,0 +1,9 @@
+{
+  "preset": "strict",
+  "description": "Blocks sudo entirely, external curl, all inline execution. Logs all commands.",
+  "escalation": { "session_threshold": 2, "agent_threshold": 5 },
+  "audit": { "include_allowed": true },
+  "sanitize_sudo": false,
+  "script_inspection": true,
+  "use_ask_not_deny": false
+}

@@ -1,0 +1,9 @@
+{
+  "preset": "paranoid",
+  "description": "Maximum security. Uses 'ask' not 'deny' — every blocked action requires approval.",
+  "escalation": { "session_threshold": 1, "agent_threshold": 3 },
+  "audit": { "include_allowed": true },
+  "sanitize_sudo": false,
+  "script_inspection": true,
+  "use_ask_not_deny": true
+}

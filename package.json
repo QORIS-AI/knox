@@ -1,0 +1,30 @@
+{
+  "name": "knox-claude",
+  "version": "1.0.0",
+  "description": "Security enforcement plugin for Claude Code",
+  "bin": {
+    "knox": "./bin/knox"
+  },
+  "scripts": {
+    "test": "jest --testPathPattern=tests/unit",
+    "test:integration": "jest --testPathPattern=tests/integration/hook-flow",
+    "test:live": "jest --testPathPattern=tests/integration/live-claude --testTimeout=120000",
+    "test:scenarios": "jest --testPathPattern=tests/integration/scenarios --runInBand --testTimeout=300000"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "files": [
+    ".claude-plugin/",
+    "bin/",
+    "lib/",
+    "policies/",
+    "skills/",
+    "hooks/",
+    "scripts/"
+  ],
+  "engines": { "node": ">=20" },
+  "keywords": ["claude-code", "security", "plugin", "enforcement"],
+  "author": "Qoris <apps@qoris.ai> (https://qoris.ai)",
+  "license": "MIT"
+}

@@ -1,0 +1,104 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 10 }]
+      },
+      {
+        "matcher": "Monitor",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 10 }]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 10 }]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 5 }]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 5 }]
+      },
+      {
+        "matcher": "CronCreate",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-cron-guard", "timeout": 5 }]
+      },
+      {
+        "matcher": "^mcp__",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/run-check.sh", "timeout": 5 }]
+      }
+    ],
+
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-post-audit", "async": true }]
+      }
+    ],
+
+    "ConfigChange": [
+      {
+        "matcher": "user_settings|project_settings|local_settings",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-guard", "timeout": 3 }]
+      }
+    ],
+
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-guard", "timeout": 3 }]
+      }
+    ],
+
+    "InstructionsLoaded": [
+      {
+        "matcher": "session_start|include|path_glob_match|nested_traversal|compact",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-guard", "timeout": 3 }]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-post-audit", "async": true }]
+      }
+    ],
+
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-session", "async": true }]
+      }
+    ],
+
+    "FileChanged": [
+      {
+        "matcher": ".knox.json|.knox.local.json",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-session", "async": true }]
+      }
+    ],
+
+    "TaskCreated": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-cron-guard", "timeout": 5 }]
+      }
+    ],
+
+    "SessionEnd": [
+      {
+        "matcher": "clear|prompt_input_exit|logout|resume|bypass_permissions_disabled|other",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-session", "async": true }]
+      }
+    ],
+
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/bin/knox-session", "async": true }]
+      }
+    ]
+  }
+}

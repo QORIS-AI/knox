@@ -1,0 +1,7 @@
+tests/
+docs/
+*.test.js
+.knox.json
+.knox.local.json
+.git/
+.gitignore

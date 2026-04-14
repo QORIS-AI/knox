@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+'use strict';
+const { loadConfig, PLUGIN_DATA } = require('../lib/config');
+const { readState, writeState } = require('../lib/state');
+const { writeAudit } = require('../lib/audit');
+const fs = require('fs');
+const path = require('path');
+
+let inputData = '';
+process.stdin.on('data', c => { inputData += c; });
+process.stdin.on('end', () => {
+  let event;
+  try { event = JSON.parse(inputData); } catch { process.exit(0); }
+
+  const eventName = event.hook_event_name || '';
+  const config = loadConfig();
+  const sessionId = event.session_id || 'unknown';
+
+  if (eventName === 'SessionStart') {
+    // Init: reset session state for new sessions (not resume)
+    const trigger = event.trigger || event.source || '';
+    if (trigger === 'startup' || trigger === 'clear') {
+      writeState({ session_id: sessionId, denial_count: 0, flagged: false });
+    }
+    pruneEscalation(config.escalation.agent_window_hours);
+    process.exit(0);
+  }
+
+  if (eventName === 'FileChanged') {
+    // Live config reload — config.js re-reads files on next call automatically
+    const changedFile = event.file_path || event.file_name || 'unknown';
+    writeAudit(config.audit.path, {
+      session_id: sessionId,
+      hook_event: 'FileChanged',
+      tool_name: 'FileChanged',
+      action: 'config_reloaded',
+      operation_preview: changedFile,
+      policy_preset: config.preset
+    });
+    pruneEscalation(config.escalation.agent_window_hours);
+    process.exit(0);
+  }
+
+  if (eventName === 'SubagentStart') {
+    // Inject Knox context into subagent's LLM context
+    const state = readState(sessionId);
+    const escalationWarning = state.flagged
+      ? ` WARNING: parent session flagged (${state.denial_count} denials).`
+      : '';
+    const response = {
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStart',
+        additionalContext: `Knox security plugin is active (preset: ${config.preset}).${escalationWarning} ${state.denial_count} denial(s) in parent session. Apply the same security judgment — avoid dangerous shell commands, pipe-to-shell patterns, and path modifications.`
+      }
+    };
+    writeAudit(config.audit.path, {
+      session_id: sessionId,
+      hook_event: 'SubagentStart',
+      tool_name: 'SubagentStart',
+      action: 'subagent_context_injected',
+      operation_preview: `preset:${config.preset} parent_denials:${state.denial_count}`,
+      policy_preset: config.preset
+    });
+    process.stdout.write(JSON.stringify(response) + '\n');
+    process.exit(0);
+  }
+
+  if (eventName === 'SessionEnd') {
+    // Async flush — write a final summary audit entry if there were denials
+    try {
+      const state = readState(sessionId);
+      if (state.denial_count > 0) {
+        writeAudit(config.audit.path, {
+          session_id: sessionId,
+          hook_event: 'SessionEnd',
+          tool_name: 'SessionEnd',
+          action: 'session_summary',
+          operation_preview: `${state.denial_count} denial(s) this session`,
+          policy_preset: config.preset
+        });
+      }
+    } catch { /* non-fatal */ }
+    process.exit(0);
+  }
+
+  process.exit(0);
+});
+
+function pruneEscalation(windowHours) {
+  const file = path.join(PLUGIN_DATA, 'escalation.json');
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const now = Date.now();
+    const windowMs = (windowHours || 1) * 3600 * 1000;
+    data.denials = (data.denials || []).filter(d => now - d.ts < windowMs);
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data));
+    fs.renameSync(tmp, file);
+  } catch { /* escalation.json may not exist yet — that's fine */ }
+}

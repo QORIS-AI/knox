@@ -1,0 +1,9 @@
+{
+  "preset": "minimal",
+  "description": "Blocks miners, destruction, self-protection only. No execution or network rules.",
+  "escalation": { "session_threshold": 5, "agent_threshold": 15 },
+  "audit": { "include_allowed": false },
+  "sanitize_sudo": false,
+  "script_inspection": false,
+  "use_ask_not_deny": false
+}

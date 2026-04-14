@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+'use strict';
+const { loadConfig } = require('../lib/config');
+const { writeAudit } = require('../lib/audit');
+const { readState } = require('../lib/state');
+
+let inputData = '';
+process.stdin.on('data', c => { inputData += c; });
+process.stdin.on('end', () => {
+  let event;
+  try { event = JSON.parse(inputData); } catch { process.exit(0); }
+
+  const config = loadConfig();
+  const eventName = event.hook_event_name || '';
+  const toolName = event.tool_name || '';
+  const input = event.tool_input || {};
+  const sessionId = event.session_id || 'unknown';
+
+  let action = 'complete';
+  if (eventName === 'PermissionDenied') action = 'auto_denied';
+  else if (eventName === 'PostToolUseFailure') action = 'failure';
+
+  writeAudit(config.audit.path, {
+    session_id: sessionId,
+    hook_event: eventName,
+    tool_name: toolName,
+    action,
+    operation_preview: input.command || input.file_path || '',
+    _preview_chars: config.audit.command_preview_chars || 120,
+    policy_preset: config.preset,
+    project: process.env.CLAUDE_PROJECT_DIR || process.cwd()
+  });
+
+  // After PostToolUse: inject session denial context into conversation
+  if (eventName === 'PostToolUse') {
+    const state = readState(sessionId);
+    if (state.denial_count > 0) {
+      const response = {
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: `Knox: ${state.denial_count} denial(s) this session. Threshold: ${config.escalation.session_threshold}. Consider alternative approaches that don't require blocked patterns.`
+        }
+      };
+      process.stdout.write(JSON.stringify(response) + '\n');
+    }
+  }
+
+  process.exit(0);
+});

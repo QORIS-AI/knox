@@ -1,0 +1,6 @@
+node_modules/
+.knox.local.json
+*.jsonl
+*.log
+.DS_Store
+coverage/

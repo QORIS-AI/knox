@@ -1,0 +1,29 @@
+{
+  "name": "knox",
+  "version": "1.0.0",
+  "description": "Security enforcement layer for Claude Code. Blocks dangerous commands, audits every tool call, detects prompt injection.",
+  "author": { "name": "Qoris", "email": "apps@qoris.ai", "url": "https://qoris.ai" },
+  "homepage": "https://qoris.ai/knox",
+  "repository": "https://github.com/qoris-ai/knox-claude",
+  "license": "MIT",
+  "keywords": ["security", "enforcement", "audit", "safety", "policy"],
+  "hooks": "./hooks/hooks.json",
+  "userConfig": {
+    "preset": {
+      "title": "Security Preset",
+      "description": "Security preset: minimal | standard | strict | paranoid (default: standard)",
+      "type": "string"
+    },
+    "webhook": {
+      "title": "Webhook URL",
+      "description": "Webhook URL for security alerts (optional, leave blank to skip)",
+      "type": "string",
+      "sensitive": false
+    },
+    "audit_path": {
+      "title": "Audit Log Path",
+      "description": "Audit log directory path (leave blank for default: ~/.local/share/knox/audit)",
+      "type": "string"
+    }
+  }
+}

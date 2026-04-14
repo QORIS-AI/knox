@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+'use strict';
+const { checkInjection } = require('../lib/check');
+const { loadConfig } = require('../lib/config');
+const { writeAudit } = require('../lib/audit');
+
+let inputData = '';
+process.stdin.on('data', c => { inputData += c; });
+process.stdin.on('end', () => {
+  let event;
+  try { event = JSON.parse(inputData); } catch { process.exit(0); }
+
+  const eventName = event.hook_event_name || '';
+  const config = loadConfig();
+
+  if (eventName === 'ConfigChange') {
+    // Self-protection: inspect the changed settings file for Knox-disabling changes.
+    // ConfigChange event schema (confirmed): { hook_event_name, config_source, file_path }
+    const filePath = event.file_path || event.changed_file || '';
+    if (filePath) {
+      try {
+        const fs = require('fs');
+        const changedContent = fs.readFileSync(filePath, 'utf8');
+        // Block if the modified settings file disables all hooks or removes Knox
+        if (/disableAllHooks["\s]*:["\s]*true/i.test(changedContent) ||
+            (changedContent.includes('"hooks"') && !changedContent.includes('run-check.sh') &&
+             !changedContent.includes('knox-check'))) {
+          const msg = 'Knox: Detected settings change that may disable Knox hooks — blocked';
+          process.stderr.write(msg + '\n');
+          const response = { decision: 'block', reason: msg };
+          process.stdout.write(JSON.stringify(response) + '\n');
+          process.exit(0);
+        }
+      } catch { /* settings file unreadable — allow, don't block legitimate changes */ }
+    }
+    process.exit(0);
+  }
+
+  if (eventName === 'UserPromptSubmit') {
+    const prompt = event.prompt || '';
+    const r = checkInjection(prompt, config);
+    if (r) {
+      writeAudit(config.audit.path, {
+        session_id: event.session_id,
+        hook_event: 'UserPromptSubmit',
+        tool_name: 'UserPromptSubmit',
+        action: 'deny',
+        reason: r.reason,
+        rule_id: r.id
+      });
+      process.stderr.write(r.reason + '\n');
+      process.exit(2); // exit 2 erases poisoned prompt from context entirely
+    }
+    process.exit(0);
+  }
+
+  if (eventName === 'InstructionsLoaded') {
+    // NOT blockable. NO additionalContext support on this event.
+    // Audit-only: read the file, scan for injection, log + optional webhook.
+    const filePath = event.file_path || '';
+    if (filePath) {
+      try {
+        const fs = require('fs');
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const r = checkInjection(fileContent, config);
+        if (r) {
+          writeAudit(config.audit.path, {
+            session_id: event.session_id,
+            hook_event: 'InstructionsLoaded',
+            tool_name: 'InstructionsLoaded',
+            action: 'injection_detected',
+            operation_preview: filePath,
+            reason: r.reason,
+            rule_id: r.id
+          });
+          // Send webhook if configured
+          if (config.alerts && config.alerts.enabled && config.alerts.webhook) {
+            try {
+              const https = require('https');
+              const http = require('http');
+              const payload = JSON.stringify({
+                event: 'InstructionsLoaded',
+                file: filePath,
+                reason: r.reason,
+                session_id: event.session_id
+              });
+              const url = new URL(config.alerts.webhook);
+              const lib = url.protocol === 'https:' ? https : http;
+              const req = lib.request({
+                hostname: url.hostname,
+                port: url.port,
+                path: url.pathname + url.search,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(payload)
+                }
+              });
+              req.on('error', () => {}); // fire-and-forget
+              req.write(payload);
+              req.end();
+            } catch { /* webhook failure is non-fatal */ }
+          }
+        }
+      } catch { /* file read failure is non-fatal */ }
+    }
+    // InstructionsLoaded: MUST exit 0, MUST NOT output permissionDecision
+    process.exit(0);
+  }
+
+  process.exit(0);
+});

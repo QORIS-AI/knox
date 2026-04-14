@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+'use strict';
+const { checkInjection, isCheckDisabled } = require('../lib/check');
+const { loadConfig } = require('../lib/config');
+const { writeAudit } = require('../lib/audit');
+
+let inputData = '';
+process.stdin.on('data', c => { inputData += c; });
+process.stdin.on('end', () => {
+  let event;
+  try { event = JSON.parse(inputData); } catch { process.exit(0); }
+
+  const config = loadConfig();
+
+  // Respect disabled_checks: cron_inspection
+  if (isCheckDisabled(config, 'cron_inspection')) {
+    process.exit(0);
+  }
+
+  const input = event.tool_input || {};
+  const hookEventName = event.hook_event_name || 'PreToolUse';
+
+  // CronCreate has `prompt` field; TaskCreated has `instructions` or `description`
+  const text = input.prompt || input.instructions || input.description || JSON.stringify(input);
+
+  const r = checkInjection(text, config);
+  if (r) {
+    writeAudit(config.audit.path, {
+      session_id: event.session_id,
+      hook_event: hookEventName,
+      tool_name: event.tool_name || hookEventName,
+      action: 'deny',
+      reason: r.reason,
+      rule_id: r.id,
+      operation_preview: text.slice(0, 120)
+    });
+    const response = {
+      hookSpecificOutput: {
+        hookEventName: hookEventName,
+        permissionDecision: 'deny',
+        permissionDecisionReason: r.reason
+      }
+    };
+    process.stdout.write(JSON.stringify(response) + '\n');
+  }
+
+  process.exit(0);
+});
