@@ -86,7 +86,7 @@ Claude Code has no structured audit log. Knox writes every tool call (allowed an
 
 ### The honest tradeoff
 
-Knox adds latency to every tool call (a Node.js subprocess launch, ~10ms). For interactive sessions where the model catches most attacks anyway, Knox is primarily an **audit trail and backstop**. The compelling value is in:
+Knox adds latency to every tool call (a Node.js subprocess launch, ~80ms end-to-end). For interactive sessions where the model catches most attacks anyway, Knox is primarily an **audit trail and backstop**. The compelling value is in:
 
 - Autonomous agents running scheduled jobs
 - Agents receiving external input via MCP channels
@@ -287,13 +287,21 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 
 ---
 
-## Technical specs
+## Technical specs (v1.1.4)
 
 - **Node.js 20+** required (zero npm runtime deps)
 - **Claude Code v2.1.98+** required
-- **51 blocklist patterns** across 8 categories (destruction, exfiltration, execution, persistence, mining, escalation, network, self_protection)
+- **87 blocklist patterns** across 8 attack categories (destruction, exfiltration, execution, persistence, mining, escalation, network, self_protection)
+- **Tokenized parsers** for `rm`, `find`, interpreter inline code (`python -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`)
+- **Recursive unwrap** of `bash -c`, `eval`, `$(...)`, backticks, `<(...)`, delimiter splits (`;`, `&&`, `||`) — depth-bounded (4 levels)
+- **5 self-protection rules** that cannot be disabled: env-var override, knox file mutation, alias shadow, process kill, variable indirection
+- **Exfiltration conjunction detection** — secret-path read + egress verb in same command
+- **Redirect target parsing** — `>`, `>>`, `tee`, `cp`, `mv`, `ln`, `install` destinations fed through protected path check
 - **17 script content patterns** covering Python, Node.js, Shell, Ruby, Perl
-- **6 injection patterns** (ignore previous instructions, system tags, jailbreak, admin mode, etc.)
-- **196 tests** across unit, integration, scenario tiers — including 50 bypass vectors, all blocked
+- **38 per-language inline code patterns** (Python, JS, Perl, Ruby, PHP)
+- **6 prompt injection patterns** (ignore previous instructions, system tags, jailbreak, admin mode, etc.)
+- **322 unit tests** + 25-command real-pipeline benchmark, all passing
+- **~80ms average hook latency** end-to-end (Node.js process spawn + check)
+- Red-team verified: **1.1% bypass rate** (2 of 184 commands) on Opus clean adversarial run
 - Atomic writes everywhere (tmp + rename) — state never corrupts on crash
 - Audit log uses O_APPEND — safe under concurrent sessions

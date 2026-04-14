@@ -1,5 +1,65 @@
 # Knox Changelog
 
+## [1.1.4] — 2026-04-14
+
+### Fixed
+- `find / -name id_rsa -exec cat {} \;` — `analyzeFind` now detects `-name` / `-iname` matching known secret filenames (id_*, *_rsa, *_ed25519, *.pem, *.key, credentials, shadow, authorized_keys, .env*) paired with `-exec` running a reader (cat/less/head/tail/xxd/od/base64/strings/nc/curl/wget). Blocks at SP-FIND.
+- `xargs -I{} bash -c "{}"` and variants — new BL-088 pattern catches xargs piping stdin payloads into shell/interpreter `-c` calls.
+
+After v1.1.4, Opus clean red-team reports **1.1% bypass rate** (2 of 184 commands tested) — both remaining gaps are design decisions (single reads of local secrets allowed at standard preset) rather than unfixable bugs.
+
+## [1.1.3] — 2026-04-14
+
+### Fixed
+- Extended knox-file mutation guard to cover `lib/*.js` files (editing `lib/check.js` would neutralize Knox)
+- Added `cp`, `mv`, `install` target parsing to redirect module — `cp /tmp/evil .git/hooks/pre-commit` now blocks (persistence via copy)
+
+## [1.1.2] — 2026-04-14
+
+### Added (9 new gap closures from clean red-team)
+- `SP-005` variable indirection: catches `r=rm; $r -rf ~` and similar shell variable alias tricks
+- Extended `BL-050` hex_encoded_payload to match `echo -e '\xXX'` variants (not just printf)
+- `ln -sf` symlink replacement of shell config files (`ln -sf /tmp/evil ~/.bashrc`) via redirect module
+- Extended `BL-051` mining_pool_protocol with common pool domains: minexmr.com, ethermine.org, 2miners.com, f2pool.com, flexpool.io, supportxmr.com, moneroocean.stream, viabtc.com
+- `UNCONDITIONAL_SECRET_READS` set: `/etc/shadow` and `~/.gnupg/private-keys-v1.d/*` blocked outright (not just paired with egress)
+- `FIND_XARGS_SECRET`: `find / -name id_rsa | xargs cat` pattern
+- `checkKnoxKill` extended to cover `unlink`/`rm`/`truncate`/`shred` targeting Knox audit log files
+- Self-protect `KNOX_PROTECTED_PATHS` expanded with `~/.knox`, `policies/patterns.json`, `lib/*.js`, `bin/knox-check`, `bin/run-check.sh`
+- System file redirect protection (`> /etc/passwd`, `: > /etc/passwd`) via `SYSTEM_PROTECTED_PATHS` set
+
+## [1.1.1] — 2026-04-14
+
+### Added (22 new patterns closing red-team gaps)
+- `BL-069 rm_rf_glob` — `rm -rf /*` glob form (glob resolution bypasses literal-path match)
+- `BL-070 systemctl_persist` — `systemctl enable/start` moved from strict to standard
+- `BL-071 update_rc_d` — SysV service registration
+- `BL-072 chmod_git_hooks` — `chmod +x .git/hooks/*`
+- `BL-073 autostart_write` — `~/.config/autostart/` writes (cp, mv, redirect)
+- `BL-074 crontab_stdin_pipe` — generic `| crontab -` stdin (catches benign-looking cron installs)
+- `BL-075 ngrok_tunnel` — ngrok tcp/http/tls
+- `BL-076 chisel_tunnel` — chisel client/server
+- `BL-077 ssh_remote_forward` — `ssh -R <port>:` moved from strict to standard
+- `BL-078 network_scanner` — nmap / masscan / zmap / rustscan
+- `BL-079 tcpdump_capture` — `tcpdump -w` to file
+- `BL-080 newgrp_sudo` — `newgrp sudo` / `sg sudo`
+- `BL-081 curl_F_file` — `curl -F file=@/path` upload form
+- `BL-082 curl_T_upload` — `curl -T -` stdin upload
+- `BL-083 dns_exfil_dig` — `cat file | xargs dig` DNS exfiltration chain
+- `BL-084 bash_history_exfil` — bash_history piped to egress
+- `BL-085 redirect_system_file` — `> /etc/passwd` and siblings
+- `BL-086 colon_redirect_system` — `: > /etc/passwd` null-command truncation
+- `BL-087 two_step_fetch_exec` — `curl > /tmp/x && bash /tmp/x` download-then-exec chain
+- `IL-PY-009` urllib/requests library detection in inline Python
+- `IL-PY-010` `open('/etc/shadow')` direct file reads
+- `IL-PY-011` `open('~/.ssh/id_rsa')` SSH private key opens
+- New `checkEnvExport` catches bare `export KNOX_PRESET=off` (session poison, not just command prefix)
+
+### Fixed
+- BL-024 `\bsu\s+-\b` didn't match `su -` (trailing `\b` problem with non-word char) → now uses `\bsu\s+-(?:\s|$)|^\s*su\s*$`
+- `LD_PRELOAD=/tmp/e.so id` env-var strip no longer strips dangerous env vars before BL-039 can match (new `DANGEROUS_ENV_VARS` set: `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`, `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `DYLD_INSERT_LIBRARIES`, `IFS`)
+- `rm -rf ../../` parent-traversal detection in rm parser
+- Self-protect `extractTargets` refined to only scan sub-commands split on shell delimiters, preventing false positives on commit messages containing `knox-check` substrings
+
 ## [1.1.0] — 2026-04-14
 
 ### Architecture shift — pattern engine → recursive unwrap + tokenized parsers
