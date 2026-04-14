@@ -1,6 +1,6 @@
 {
   "name": "knox-claude",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Security enforcement plugin for Claude Code",
   "bin": {
     "knox": "./bin/knox"
