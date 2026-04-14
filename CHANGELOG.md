@@ -1,5 +1,10 @@
 # Knox Changelog
 
+## [1.0.1] — 2026-04-14
+
+### Fixed
+- Remove `"hooks"` pointer from `plugin.json` — `hooks/hooks.json` is auto-discovered by Claude Code and specifying it explicitly caused a duplicate hooks load error on install
+
 ## [1.0.0] — 2026-04-14
 
 ### Initial release
