@@ -88,7 +88,8 @@
     { "id": "BL-084", "label": "bash_history_exfil", "pattern": "\\bcat\\b[^|;]*\\.bash_history[^|]*\\|\\s*(?:nc|ncat|curl|wget|scp)\\b", "flags": "i", "category": "exfiltration", "risk": "high", "preset_min": "standard" },
     { "id": "BL-085", "label": "redirect_system_file", "pattern": "(?:^|[^2&>])>{1,2}\\s*/etc/(?:passwd|shadow|sudoers|hosts|resolv\\.conf|ssh/sshd_config|group)", "flags": "i", "category": "destruction", "risk": "critical", "preset_min": "minimal" },
     { "id": "BL-086", "label": "colon_redirect_system", "pattern": "^\\s*:\\s*>\\s*/etc/(?:passwd|shadow|sudoers|hosts)", "flags": "i", "category": "destruction", "risk": "critical", "preset_min": "minimal" },
-    { "id": "BL-087", "label": "two_step_fetch_exec", "pattern": "(?:curl|wget)\\b[^|;]*>\\s*/tmp/\\S+\\s*&&\\s*(?:bash|sh|zsh|python|node|perl|ruby)\\s+/tmp/", "flags": "i", "category": "execution", "risk": "critical", "preset_min": "standard" }
+    { "id": "BL-087", "label": "two_step_fetch_exec", "pattern": "(?:curl|wget)\\b[^|;]*>\\s*/tmp/\\S+\\s*&&\\s*(?:bash|sh|zsh|python|node|perl|ruby)\\s+/tmp/", "flags": "i", "category": "execution", "risk": "critical", "preset_min": "standard" },
+    { "id": "BL-088", "label": "xargs_shell_payload", "pattern": "\\bxargs\\b[^|;]*-I\\s*\\S+[^|;]*(?:bash|sh|zsh|python|perl|ruby|node)\\s+-[cer]\\s+[\"']?[\\{]", "flags": "i", "category": "execution", "risk": "high", "preset_min": "standard", "description": "xargs -I{} passing stdin payloads to shell/interpreter" }
   ],
   "script_content_patterns": [
     { "id": "SC-001", "label": "python_rmtree", "pattern": "shutil\\.rmtree", "flags": "", "risk": "high" },
