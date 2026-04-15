@@ -1,5 +1,11 @@
 # Knox Changelog
 
+## [1.2.0] — 2026-04-15
+
+### Added
+- **ClawHub distribution** — Knox is now publishable to ClawHub as a `bundle-plugin` for OpenClaw users. Adds `openclaw.bundle.json` (hostTargets=["claude-code"], format="claude-code-plugin") and an `openclaw` metadata block in `package.json`. Claude Code users are unaffected — the existing `qoris-ai/qoris-marketplace` install path continues to work exactly as before.
+- **`.clawhubignore`** — excludes tests, logs, lockfiles, and local state from ClawHub uploads (ClawHub CLI does not respect `.gitignore`/`.npmignore`, only `.clawhubignore`).
+
 ## [1.1.5] — 2026-04-14
 
 ### Added

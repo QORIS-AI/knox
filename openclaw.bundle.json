@@ -1,0 +1,5 @@
+{
+  "id": "knox-claude",
+  "hostTargets": ["claude-code"],
+  "format": "claude-code-plugin"
+}

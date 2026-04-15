@@ -1,7 +1,7 @@
 {
   "name": "knox-claude",
-  "version": "1.1.5",
-  "description": "Security enforcement plugin for Claude Code",
+  "version": "1.2.0",
+  "description": "Security enforcement layer for Claude Code. Blocks dangerous commands, audits every tool call, detects prompt injection.",
   "bin": {
     "knox": "./bin/knox"
   },
@@ -21,10 +21,20 @@
     "policies/",
     "skills/",
     "hooks/",
-    "scripts/"
+    "scripts/",
+    "openclaw.bundle.json"
   ],
   "engines": { "node": ">=20" },
   "keywords": ["claude-code", "security", "plugin", "enforcement"],
   "author": "Qoris <apps@qoris.ai> (https://qoris.ai)",
-  "license": "MIT"
+  "homepage": "https://qoris.ai/knox",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qoris-ai/knox-claude"
+  },
+  "license": "MIT",
+  "openclaw": {
+    "hostTargets": ["claude-code"],
+    "bundleFormat": "claude-code-plugin"
+  }
 }

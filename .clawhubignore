@@ -1,0 +1,9 @@
+tests/
+coverage/
+package-lock.json
+*.log
+*.jsonl
+.knox.local.json
+.knox.json
+.npmignore
+.gitignore

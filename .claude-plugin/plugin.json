@@ -1,6 +1,6 @@
 {
   "name": "knox",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "description": "Security enforcement layer for Claude Code. Blocks dangerous commands, audits every tool call, detects prompt injection.",
   "author": { "name": "Qoris", "email": "apps@qoris.ai", "url": "https://qoris.ai" },
   "homepage": "https://qoris.ai/knox",
