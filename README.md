@@ -563,7 +563,7 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 
 ---
 
-## Technical specs (v2.0.0)
+## Technical specs (v2.1.0)
 
 - **Node.js 20+** required (zero npm runtime deps)
 - **Claude Code v2.1.98+** required for the plugin install path
@@ -576,7 +576,7 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 - **17 script content patterns** covering Python, Node.js, Shell, Ruby, Perl
 - **51 per-language inline code patterns** (Python, JS, Perl, Ruby, PHP)
 - **6 prompt injection patterns** (`ignore-previous-instructions`, system tags, jailbreak, admin mode, etc.)
-- **371 unit tests** including standalone-CLI / library-export / sibling-path-regression suites, all passing
+- **403 unit tests** including standalone-CLI / library-export / Cursor-adapter / sibling-path-regression suites, all passing
 - **~80ms average hook latency** end-to-end (Node.js process spawn + check)
 - Red-team verified: **1.1% bypass rate** (2 of 184 commands) on Opus clean adversarial run
 - Atomic writes everywhere (tmp + rename) — state never corrupts on crash
