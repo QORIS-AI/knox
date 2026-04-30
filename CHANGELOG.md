@@ -1,5 +1,11 @@
 # Knox Changelog
 
+## [2.2.1] — 2026-04-30
+
+### Added
+- **`knox scan [path]`** — walk a directory and run script-content inspection on every shell/python/node/ruby/perl file. Catches dangerous patterns BEFORE an agent invokes them. Useful in CI (scan PR diffs, scan dependency-added installer scripts, gate on critical findings). Flags: `--json` (NDJSON one finding per line), `--ext .sh,.py,...` (extension allowlist), `--max-depth N`, `--max-size NKB|NMB`. Exit codes: 0 = clean, 1 = file errors, 2 = critical finding. Skips `node_modules`, `.git`, `dist`, `build`, `.venv`, `__pycache__`, `.next`, `.cache`, and dotfile dirs by default.
+- **8 new tests** in `tests/unit/cli-scan.test.js` covering benign files, JSON mode, non-existent target, default-skipped dirs, `--ext` filter, oversized-file handling, single-file targets. **437 / 437 unit tests pass.**
+
 ## [2.2.0] — 2026-04-30
 
 Native OpenAI Codex plugin support. Knox now ships as a single source tree targeting four hosts: Claude Code, Cursor, OpenAI Codex (new), and standalone CLI. The policy engine, blocklist patterns, audit log format, and self-protection rules are 100% shared — only the wire-format adapter and installer differ.

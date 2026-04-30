@@ -409,6 +409,117 @@ const COMMANDS = {
     }
   },
 
+  // ── knox scan: walk a directory, run script-content inspection on every script ──
+  // Catches dangerous patterns in install/setup scripts BEFORE an agent invokes them.
+  // Useful in CI: `knox scan ./scripts/` after dependency updates, or against PR diffs.
+  //
+  // Usage:
+  //   knox scan ./                    # scan current directory recursively
+  //   knox scan ./scripts/            # scan a specific subdir
+  //   knox scan . --json              # machine-readable JSONL output (one finding per line)
+  //   knox scan . --ext .sh,.py       # only scan these extensions (default: shell+python+node+ruby+perl)
+  //   knox scan . --max-depth 5       # walk depth (default: 10)
+  //   knox scan . --max-size 5MB      # per-file size cap (default: 1MB)
+  //
+  // Exit code: 0 = clean, 1 = file errors, 2 = at least one critical finding.
+  scan() {
+    const { inspectScript } = lib('script-inspect');
+    const target = positional()[0] || '.';
+    const json = flag('--json');
+    const exts = (opt('--ext') || '.sh,.bash,.zsh,.py,.js,.mjs,.cjs,.rb,.pl').split(',').map(e => e.trim().startsWith('.') ? e.trim() : '.' + e.trim());
+    const maxDepth = parseInt(opt('--max-depth') || '10');
+    const sizeArg = opt('--max-size');
+    let maxSize = 1024 * 1024;
+    if (sizeArg) {
+      const m = sizeArg.match(/^(\d+)(K|M|G)?B?$/i);
+      if (m) {
+        const n = parseInt(m[1]);
+        const unit = (m[2] || '').toUpperCase();
+        maxSize = n * (unit === 'G' ? 1024**3 : unit === 'M' ? 1024**2 : unit === 'K' ? 1024 : 1);
+      }
+    }
+
+    const root = path.resolve(target);
+    if (!fs.existsSync(root)) {
+      console.error(`knox scan: target does not exist: ${root}`);
+      process.exit(1);
+    }
+
+    // Recursively collect candidate files (skip node_modules, .git, dist, build, .venv)
+    const skipDirs = new Set(['node_modules', '.git', 'dist', 'build', '.venv', '__pycache__', '.next', '.cache']);
+    const files = [];
+    function walk(dir, depth) {
+      if (depth > maxDepth) return;
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (skipDirs.has(e.name) || e.name.startsWith('.')) continue;
+          walk(full, depth + 1);
+        } else if (e.isFile()) {
+          const ext = path.extname(e.name).toLowerCase();
+          if (exts.includes(ext)) files.push(full);
+        }
+      }
+    }
+    const stat = fs.statSync(root);
+    if (stat.isFile()) files.push(root);
+    else walk(root, 0);
+
+    if (files.length === 0) {
+      if (!json) console.log(`No matching files found under ${target} (extensions: ${exts.join(', ')})`);
+      process.exit(0);
+    }
+
+    let findings = 0, errored = 0, criticalFound = 0;
+    if (!json) console.log(`Scanning ${files.length} file(s) under ${target}...\n`);
+
+    for (const file of files) {
+      try {
+        const sz = fs.statSync(file).size;
+        if (sz > maxSize) {
+          if (!json) console.log(`  ⚠ ${path.relative(root, file)} (skipped: ${sz} bytes > ${maxSize})`);
+          else process.stdout.write(JSON.stringify({ file: path.relative(root, file), status: 'skipped', reason: 'too-large' }) + '\n');
+          continue;
+        }
+        const result = inspectScript(path.basename(file), path.dirname(file));
+        if (result && result.blocked) {
+          findings++;
+          const isCritical = result.risk === 'critical';
+          if (isCritical) criticalFound++;
+          if (json) {
+            process.stdout.write(JSON.stringify({
+              file: path.relative(root, file),
+              status: 'block',
+              ruleId: result.id,
+              risk: result.risk || 'high',
+              reason: result.reason
+            }) + '\n');
+          } else {
+            const sym = isCritical ? '✗' : '⚠';
+            console.log(`  ${sym} ${path.relative(root, file)}`);
+            console.log(`     Rule: ${result.id} | Risk: ${result.risk || 'high'}`);
+            console.log(`     Reason: ${result.reason}`);
+          }
+        } else if (json) {
+          process.stdout.write(JSON.stringify({ file: path.relative(root, file), status: 'allow' }) + '\n');
+        }
+      } catch (e) {
+        errored++;
+        if (json) process.stdout.write(JSON.stringify({ file: path.relative(root, file), status: 'error', reason: e.message }) + '\n');
+        else console.log(`  ! ${path.relative(root, file)} (error: ${e.message})`);
+      }
+    }
+
+    if (!json) {
+      console.log(`\n${files.length} scanned · ${findings} finding(s) · ${errored} error(s)`);
+    }
+    if (criticalFound > 0) process.exit(2);
+    if (findings > 0 || errored > 0) process.exit(1);
+    process.exit(0);
+  },
+
   // ── knox check: machine-readable policy decisions over stdin/stdout ──────────
   // Reads a JSON event payload on stdin (same shape Claude Code / Cursor send to
   // PreToolUse hooks) and writes a JSON decision to stdout. Exit code mirrors
@@ -847,6 +958,11 @@ COMMANDS:
   audit [N] [--since 1h] [--denied-only] [--tail] [--page N]
                                       Review audit log entries (default: 20, paginated)
   test "command"                      Dry-run a command against active policy (human-friendly)
+  scan [path] [--json] [--ext list] [--max-depth N] [--max-size N]
+                                      Walk a directory and run script-content
+                                      inspection on every shell/python/node/ruby/perl
+                                      file. Catches dangerous patterns BEFORE an agent
+                                      runs them. Exit 2 = critical found.
   check [--tool X --command Y | --path Y] [--pretty]
                                       Programmatic policy check. Reads JSON event
                                       from stdin (Claude Code/Cursor hook shape) OR

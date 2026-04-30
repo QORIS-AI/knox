@@ -1,6 +1,6 @@
 {
   "name": "@qoris/knox",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Security enforcement layer for AI coding agents (Claude Code, Cursor, OpenAI Codex, custom runtimes). Blocks dangerous commands, audits every tool call, detects prompt injection. Usable as a CLI, a Node library, or a plugin.",
   "main": "./lib/index.js",
   "exports": {
