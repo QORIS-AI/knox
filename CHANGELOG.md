@@ -28,6 +28,25 @@ Native OpenAI Codex plugin support. Knox now ships as a single source tree targe
 - `additionalContext` on `PreToolUse` response is rejected by current Codex parser even though it appears in some docs. Adapter does NOT emit it; we use `UserPromptSubmit` for context injection instead.
 - `SessionEnd` is documented in some changelog entries but is NOT in `HOOK_EVENT_NAMES`. Knox does not register a SessionEnd hook on Codex (silently ignored anyway).
 
+### Distribution paths for Codex users
+Two install paths — pick one:
+
+**A. Direct hook wiring (simplest, recommended):**
+```
+npm install -g @qoris/knox
+knox install --target codex
+```
+
+**B. Via the Codex marketplace (managed):**
+```
+codex plugin marketplace add qoris-ai/qoris-marketplace
+# Then enable in TUI via /plugins, or in ~/.codex/config.toml:
+#   [plugins."knox@qoris"]
+#   enabled = true
+```
+
+`qoris-ai/qoris-marketplace` ships a Codex-format catalog at `.agents/plugins/marketplace.json` pinned to Knox `v2.2.0`. Codex doesn't expose `codex plugin install <name>` as a CLI command — enablement is via the TUI's `/plugins` slash command or a manual config.toml edit. Option A wires the same hooks in one step without going through the marketplace.
+
 ### Migration / no-op for existing users
 - Existing `npm install -g @qoris/knox` installs gain Codex support automatically on upgrade.
 - Run `knox install --target codex` to wire it. Restart any open Codex sessions afterward.

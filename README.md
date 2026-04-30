@@ -80,6 +80,9 @@ Live-verified against `cursor-agent` 2026.04.29 — `beforeShellExecution`, `bef
 
 ### As an OpenAI Codex plugin
 
+Two install paths — pick one.
+
+**A. Direct hook wiring (simplest):**
 ```bash
 npm install -g @qoris/knox
 knox install --target codex
@@ -87,7 +90,20 @@ knox install --target codex
 # Restart any open Codex sessions. Knox is now active for codex exec / interactive TUI / app.
 ```
 
-Live-verified against Codex CLI 0.125.0 — `PreToolUse` (Bash + `apply_patch` + MCP), `PermissionRequest`, and `UserPromptSubmit` all fire. Codex's model surfaces Knox rule IDs back to the user verbatim. Distribution via `codex plugin marketplace add qoris-ai/qoris-marketplace --ref v2.2.0`.
+**B. Via the Codex marketplace (managed by Codex):**
+```bash
+codex plugin marketplace add qoris-ai/qoris-marketplace
+# Then enable the plugin one of two ways:
+
+#   • In the Codex TUI, run the /plugins slash command and toggle knox on
+#   • Or edit ~/.codex/config.toml:
+#       [plugins."knox@qoris"]
+#       enabled = true
+```
+
+Codex doesn't expose `codex plugin install <name>` as a CLI command — enablement is via the TUI's `/plugins` flow or a config.toml edit. That's a Codex limitation; option A is the one-shot equivalent.
+
+Live-verified against Codex CLI 0.125.0 — `PreToolUse` (Bash + `apply_patch` + MCP), `PermissionRequest`, and `UserPromptSubmit` all fire. Codex's model surfaces Knox rule IDs back to the user verbatim.
 
 ### As a Node library
 
