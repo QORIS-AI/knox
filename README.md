@@ -4,8 +4,7 @@ Knox is a security policy engine for AI coding agents. The same engine ships in 
 
 ## Contents
 
-- [Pick a surface](#pick-a-surface)
-  - [Capability matrix](#capability-matrix--what-each-surface-actually-does)
+- [Capability matrix](#capability-matrix--what-each-surface-actually-does)
 - [Quick install](#quick-install)
   - [As a CLI](#as-a-cli)
   - [As a Claude Code plugin](#as-a-claude-code-plugin)
@@ -38,29 +37,7 @@ Knox is a security policy engine for AI coding agents. The same engine ships in 
 
 ---
 
-## Pick a surface
-
-```
-                  ┌─────────────────┐
-                  │   lib/check.js  │   ← single policy engine
-                  │   88 blocklist  │     (regex + tokenized parsers +
-                  │   rules + 17    │     unwrapper + exfil/redirect
-                  │   parser layers │     analyzers + script inspector)
-                  └────────┬────────┘
-                           │
-       ┌───────────────────┼────────────────────┐
-       ▼                   ▼                    ▼
-┌────────────┐      ┌─────────────┐      ┌──────────────┐
-│  CLI       │      │  Library    │      │  Hook entry  │
-│  bin/knox  │      │ lib/index.js│      │  scripts     │
-│            │      │             │      │  (Claude     │
-│  Inspect,  │      │  Embed in   │      │   Code &     │
-│  dry-run,  │      │  your own   │      │   Cursor)    │
-│  configure │      │  runtime    │      │              │
-└────────────┘      └─────────────┘      └──────────────┘
-```
-
-### Capability matrix — what each surface actually does
+## Capability matrix — what each surface actually does
 
 | Capability | CLI | Library | Claude Code | Cursor | Codex |
 |---|:---:|:---:|:---:|:---:|:---:|
@@ -574,6 +551,32 @@ knox policy list-checks   # shows all 8 with current status
 ---
 
 ## Architecture
+
+### One engine, five surfaces
+
+```
+                  ┌─────────────────┐
+                  │   lib/check.js  │   ← single policy engine
+                  │   88 blocklist  │     (regex + tokenized parsers +
+                  │   rules + 17    │     unwrapper + exfil/redirect
+                  │   parser layers │     analyzers + script inspector)
+                  └────────┬────────┘
+                           │
+       ┌───────────────────┼────────────────────┐
+       ▼                   ▼                    ▼
+┌────────────┐      ┌─────────────┐      ┌──────────────────┐
+│  CLI       │      │  Library    │      │  Hook entry      │
+│  bin/knox  │      │ lib/index.js│      │  scripts         │
+│            │      │             │      │  (Claude Code,   │
+│  Inspect,  │      │  Embed in   │      │   Cursor,        │
+│  dry-run,  │      │  your own   │      │   OpenAI Codex)  │
+│  configure │      │  runtime    │      │                  │
+└────────────┘      └─────────────┘      └──────────────────┘
+```
+
+The CLI and library can *evaluate* whether a command is allowed but can't *prevent* an agent from running it — they're inspection tools. Real-time enforcement is what the hook scripts provide. Plugins are the same engine, wrapped in host-specific wire-format adapters.
+
+### A typical Claude Code session walkthrough
 
 ```
 Claude Code session
