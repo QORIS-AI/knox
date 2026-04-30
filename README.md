@@ -2,6 +2,42 @@
 
 Knox is a security policy engine for AI coding agents. The same engine ships in five forms — a standalone CLI, a Node library, a Claude Code plugin, a Cursor plugin, and an OpenAI Codex plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
 
+## Contents
+
+- [Pick a surface](#pick-a-surface)
+  - [Capability matrix](#capability-matrix--what-each-surface-actually-does)
+- [Quick install](#quick-install)
+  - [As a CLI](#as-a-cli)
+  - [As a Claude Code plugin](#as-a-claude-code-plugin)
+  - [As a Cursor plugin](#as-a-cursor-plugin)
+  - [As an OpenAI Codex plugin](#as-an-openai-codex-plugin)
+  - [As a Node library](#as-a-node-library)
+  - [Other install options](#other-install-options)
+- [`knox check` — programmatic policy decisions](#knox-check--programmatic-policy-decisions)
+- [What the Claude Code plugin adds on top of the CLI](#what-the-claude-code-plugin-adds-on-top-of-the-cli)
+- [Knox vs Claude Code's built-in safety](#knox-vs-claude-codes-built-in-safety--whats-actually-different)
+  - [What Claude's model catches on its own](#what-claudes-model-catches-on-its-own)
+  - [What Knox catches that the model doesn't](#what-knox-catches-that-the-model-doesnt)
+  - [The honest tradeoff](#the-honest-tradeoff)
+- [Known limitations and red-team results](#known-limitations-and-red-team-results)
+  - [Known gaps](#known-gaps-things-knox-does-not-catch-at-standard)
+  - [What Knox explicitly does NOT try to do](#what-knox-explicitly-does-not-try-to-do)
+  - [Closing gaps with your own config](#closing-gaps-with-your-own-config)
+  - [How Knox was tested](#how-knox-was-tested)
+- [Presets](#presets)
+- [What Knox intercepts (11 hook events)](#what-knox-intercepts-11-hook-events)
+- [Skills](#skills)
+- [CLI reference](#cli-reference)
+- [Configuration](#configuration)
+  - [Config file precedence](#config-file-precedence-highest--lowest)
+  - [Toggleable check categories](#toggleable-check-categories)
+  - [Example project config](#example-project-config)
+- [Architecture](#architecture)
+- [Enterprise deployment](#enterprise-deployment)
+- [Technical specs](#technical-specs-v210)
+
+---
+
 ## Pick a surface
 
 ```
