@@ -1,5 +1,31 @@
 # Knox Changelog
 
+## [2.1.0] — 2026-04-30
+
+Native Cursor plugin support. Knox now ships as a single source tree that targets three hosts: Claude Code (existing), Cursor (new), and standalone CLI (existing). The policy engine, blocklist patterns, audit log format, and self-protection rules are 100% shared — only the wire-format adapter and installer differ.
+
+### Added
+- **`.cursor-plugin/plugin.json`** — Cursor 2.5+ marketplace manifest (`name`, `version`, `description`, `author`, `repository`, `license`, `keywords`, `hooks`, `skills`).
+- **`hooks/cursor-hooks.json`** — Cursor hook wiring covering 10 events: `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`, `preToolUse` (Write/Edit/MultiEdit/NotebookEdit), `beforeSubmitPrompt`, `sessionStart`, `sessionEnd`, `subagentStop`, `stop`, `preCompact`. `failClosed: true` set on the two security-critical gates (`beforeShellExecution`, `beforeMCPExecution`) — Cursor's default is fail-open without this flag.
+- **`lib/adapter-cursor.js`** — wire-format adapter. Translates Cursor's flat `{command, cwd}` (for `beforeShellExecution`) and nested `{tool_name, tool_input}` (for `preToolUse`) into the canonical engine input. Builds Cursor response shapes: `{permission, user_message, agent_message, updated_input?}` for most gates, and the special `{continue: false, user_message}` shape required by `beforeSubmitPrompt`.
+- **`bin/knox-check-cursor`** + **`bin/run-check-cursor.sh`** — entry points that read Cursor stdin, call `lib/adapter-cursor`, write JSON response, exit 2 on critical block (mirrors Cursor's `failClosed` semantics with stderr).
+- **`knox install --target cursor`** + **`knox uninstall --target cursor`** — wire/unwire `~/.cursor/hooks.json`. Existing third-party hooks (e.g. keywordsai) are preserved; Knox entries are merged in by command-path match. `--target claude` (default) keeps existing behavior.
+- **Tests:** 32 new tests in `tests/unit/cursor-adapter.test.js` covering the flat-shell wire format, nested preToolUse routing, beforeReadFile path checks, the `{continue: false}` quirk for `beforeSubmitPrompt`, sanitize/ask/deny response variants, and lifecycle events. **403 / 403 unit tests pass.**
+
+### Live verification (cursor-agent 2026.04.29)
+- Installed via `npm install -g @qoris/knox` + `knox install --target cursor`.
+- Live-confirmed live blocks via `cursor-agent -p --yolo --trust`: BL-009 (`curl … | bash`), BL-016 (xmrig miner), SP-RM (`rm -rf /`) at `beforeShellExecution`; INJ-001 (`IGNORE PREVIOUS INSTRUCTIONS …`) at `beforeSubmitPrompt`. Cursor-agent reports the rule ID back to the user verbatim from Knox's `agent_message`.
+- Audit log writes correctly tagged `host: cursor` for source attribution.
+
+### Notes / known gaps
+- Cursor has no equivalent for these Claude Code events: `PermissionDenied`, `ConfigChange`, `InstructionsLoaded`, `Notification`. They simply aren't wired on the Cursor side. ConfigChange-style mid-session self-protection (e.g. blocking `~/.cursor/hooks.json` rewrites) requires a workspace-watcher and is deferred to a future release.
+- Cursor's `preCompact` is observational-only (cannot block compaction) — Knox audits the event but doesn't enforce.
+- In `cursor-agent` headless mode, only ~6 of the 10 wired hooks fire reliably (`afterAgentResponse`, `afterAgentThought`, `subagentStop`, `beforeMCPExecution` are forum-tracked as flaky). The two critical gates (`beforeShellExecution`, `beforeMCPExecution`) fire reliably — confirmed live.
+
+### Migration / no-op for existing users
+- Existing `npm install -g @qoris/knox` installs gain Cursor support automatically on upgrade (`npm install -g @qoris/knox@latest`); run `knox install --target cursor` to wire it.
+- Claude Code installs are unaffected.
+
 ## [2.0.0] — 2026-04-30
 
 Major release. Knox becomes a three-way artifact — a standalone CLI, a Claude Code plugin (existing), and (next phase) a Cursor plugin — sharing a single source tree. No behavior changes for existing Claude Code installs; everything additive or backwards-compatible.

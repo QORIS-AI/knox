@@ -1,6 +1,6 @@
 # Knox — Security enforcement for AI coding agents
 
-Knox is a security policy engine for AI coding agents. The same engine ships in three forms — a standalone CLI, a Node library, and a Claude Code plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
+Knox is a security policy engine for AI coding agents. The same engine ships in four forms — a standalone CLI, a Node library, a Claude Code plugin, and a Cursor plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
 
 ## Pick a surface
 
@@ -26,26 +26,26 @@ Knox is a security policy engine for AI coding agents. The same engine ships in 
 
 ### Capability matrix — what each surface actually does
 
-| Capability | CLI alone | Library | Claude Code plugin (auto-wires hooks) |
-|---|:---:|:---:|:---:|
-| `knox check` (programmatic dry-run, JSON in/out) | ✅ | ✅ | ✅ |
-| `knox test` (human-readable dry-run) | ✅ | — | ✅ |
-| `knox audit`, `knox report`, `knox status` | ✅ (read) | — | ✅ |
-| `knox policy add-block / disable / lint / export` | ✅ | — | ✅ |
-| `checkCommand()` etc. as a Node library | — | ✅ | — |
-| **Real-time blocking** of dangerous tool calls | ❌ | ❌ | ✅ |
-| **Automatic audit logging** of every tool call | ❌ | ❌ | ✅ |
-| **Prompt injection scanning** on user input + loaded instructions | ❌ | ❌ | ✅ |
-| **Self-protection** against settings/policy tampering | ❌ | ❌ | ✅ |
-| **Subagent context injection** (warns spawned subagents) | ❌ | ❌ | ✅ |
-| **Cron-job prompt scanning** at creation time | ❌ | ❌ | ✅ |
-| Escalation tracking (per-session + cross-session denial counters) | ❌ | ❌ | ✅ |
+| Capability | CLI alone | Library | Claude Code plugin | Cursor plugin |
+|---|:---:|:---:|:---:|:---:|
+| `knox check` (programmatic dry-run, JSON in/out) | ✅ | ✅ | ✅ | ✅ |
+| `knox test` (human-readable dry-run) | ✅ | — | ✅ | ✅ |
+| `knox audit`, `knox report`, `knox status` | ✅ (read) | — | ✅ | ✅ |
+| `knox policy add-block / disable / lint / export` | ✅ | — | ✅ | ✅ |
+| `checkCommand()` etc. as a Node library | — | ✅ | — | — |
+| **Real-time blocking** of dangerous tool calls | ❌ | ❌ | ✅ | ✅ |
+| **Automatic audit logging** of every tool call | ❌ | ❌ | ✅ | ✅ |
+| **Prompt injection scanning** on user input + loaded instructions | ❌ | ❌ | ✅ | ✅ |
+| **Self-protection** against settings/policy tampering | ❌ | ❌ | ✅ | partial† |
+| **Subagent context injection** (warns spawned subagents) | ❌ | ❌ | ✅ | ✅ |
+| **Cron-job prompt scanning** at creation time | ❌ | ❌ | ✅ | n/a |
+| Escalation tracking (per-session + cross-session denial counters) | ❌ | ❌ | ✅ | ✅ |
 
-**Key distinction:** the CLI and library can *evaluate* whether a command is allowed, but they can't *prevent* an agent from running it — they're inspection tools. Real-time enforcement is what hooks provide. Hooks are wired automatically when you install Knox as a Claude Code plugin (or a Cursor plugin via the third-party-hooks compatibility layer); the CLI's `knox install` subcommand wires the same hooks manually if you don't want to use the plugin manager.
+† Cursor has no `ConfigChange` / `InstructionsLoaded` / `PermissionDenied` event analogues, so a few mid-session self-protection paths only fire on Claude Code. Cron-prompt scanning (`CronCreate`) is Claude Code-only.
+
+**Key distinction:** the CLI and library can *evaluate* whether a command is allowed, but they can't *prevent* an agent from running it — they're inspection tools. Real-time enforcement is what hooks provide. Hooks are wired automatically when you install Knox as a Claude Code plugin or a Cursor plugin; the CLI's `knox install [--target claude|cursor]` subcommand wires the same hooks manually if you don't want to use the plugin manager.
 
 If you want enforcement: install the plugin. If you only want to embed Knox's decisions into your own agent runtime, or audit/inspect from a terminal: install the CLI/library.
-
-Cursor support: Cursor reads Claude Code's `~/.claude/settings.json` directly via its third-party-hooks compat layer. After installing the Claude Code plugin, enable "Third-party skills" in Cursor settings and Knox is active there too. Native Cursor plugin coming next.
 
 ## Quick install
 
@@ -66,6 +66,17 @@ claude plugin marketplace add qoris-ai/qoris-marketplace   # one-time
 claude plugin install knox@qoris
 # Knox is now active in every Claude Code session.
 ```
+
+### As a Cursor plugin
+
+```bash
+npm install -g @qoris/knox
+knox install --target cursor
+# → wires ~/.cursor/hooks.json with 10 hook entries
+# Restart Cursor (no hot-reload). Knox is now active in every Cursor session.
+```
+
+Live-verified against `cursor-agent` 2026.04.29 — `beforeShellExecution`, `beforeMCPExecution`, and `beforeSubmitPrompt` gates fire. cursor-agent surfaces Knox rule IDs back to the user verbatim. Public Cursor marketplace listing pending.
 
 ### As a Node library
 

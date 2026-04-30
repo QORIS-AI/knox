@@ -72,6 +72,86 @@ function parseSince(since) {
   return Date.now() - parseInt(n) * mult[unit];
 }
 
+// ── Cursor install/uninstall helpers ──────────────────────────────────────────
+// Cursor reads ~/.cursor/hooks.json (precedence: workspace > user). We merge our
+// hook entries in by source path so multiple Knox installs don't duplicate, and
+// uninstall removes only entries that point at this plugin tree.
+function cursorHooksFile() { return path.join(os.homedir(), '.cursor', 'hooks.json'); }
+
+function installCursor() {
+  const hooksFile = cursorHooksFile();
+  const cmd = `${PLUGIN_ROOT}/bin/run-check-cursor.sh`;
+
+  // Cursor hook events Knox wires
+  const events = {
+    beforeShellExecution: { failClosed: true, timeout: 10 },
+    beforeMCPExecution:   { failClosed: true, timeout: 5 },
+    beforeReadFile:       { timeout: 5 },
+    preToolUse:           { matcher: 'Write|Edit|MultiEdit|NotebookEdit', timeout: 5 },
+    beforeSubmitPrompt:   { timeout: 3 },
+    sessionStart:         { timeout: 3 },
+    sessionEnd:           { timeout: 3 },
+    subagentStop:         { timeout: 3 },
+    stop:                 { timeout: 3 },
+    preCompact:           { timeout: 3 }
+  };
+
+  let cfg = { version: 1, hooks: {} };
+  if (fs.existsSync(hooksFile)) {
+    try { cfg = JSON.parse(fs.readFileSync(hooksFile, 'utf8')); }
+    catch { console.warn('Knox: could not parse existing ~/.cursor/hooks.json, starting fresh'); }
+  }
+  if (!cfg.hooks) cfg.hooks = {};
+
+  let wired = 0, skipped = 0;
+  for (const [event, opts] of Object.entries(events)) {
+    if (!cfg.hooks[event]) cfg.hooks[event] = [];
+    const isKnox = h => h && typeof h.command === 'string' && h.command.includes('run-check-cursor');
+    const existing = cfg.hooks[event].find(isKnox);
+    if (existing) {
+      Object.assign(existing, { command: cmd, ...opts });
+      skipped++;
+    } else {
+      cfg.hooks[event].push({ command: cmd, ...opts });
+      wired++;
+    }
+  }
+
+  fs.mkdirSync(path.dirname(hooksFile), { recursive: true });
+  const tmp = hooksFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, hooksFile);
+
+  console.log(`Knox: ${wired} hook entries wired into ~/.cursor/hooks.json${skipped ? ` (${skipped} updated)` : ''}.`);
+  console.log('Knox: restart Cursor for hooks to take effect (no hot-reload).');
+}
+
+function uninstallCursor() {
+  const hooksFile = cursorHooksFile();
+  if (!fs.existsSync(hooksFile)) { console.log('No ~/.cursor/hooks.json found.'); return; }
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(hooksFile, 'utf8')); }
+  catch { console.error('Knox: could not parse ~/.cursor/hooks.json'); process.exit(1); }
+
+  let removed = 0;
+  if (cfg.hooks) {
+    for (const event of Object.keys(cfg.hooks)) {
+      const before = cfg.hooks[event].length;
+      cfg.hooks[event] = cfg.hooks[event].filter(
+        h => !(h && typeof h.command === 'string' && h.command.includes('run-check-cursor'))
+      );
+      removed += before - cfg.hooks[event].length;
+      if (cfg.hooks[event].length === 0) delete cfg.hooks[event];
+    }
+    if (Object.keys(cfg.hooks).length === 0) delete cfg.hooks;
+  }
+
+  const tmp = hooksFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, hooksFile);
+  console.log(`Knox: removed ${removed} hook entries from ~/.cursor/hooks.json`);
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 const COMMANDS = {
@@ -605,11 +685,23 @@ const COMMANDS = {
   },
 
   install() {
+    const target = opt('--target') || 'claude';
+    if (target === 'cursor') return installCursor();
+    if (target !== 'claude') {
+      console.error(`Unknown --target: ${target}. Supported: claude, cursor`);
+      process.exit(1);
+    }
     // Delegate to postinstall.js which wires all 11 events
     require(path.join(PLUGIN_ROOT, 'scripts', 'postinstall'));
   },
 
   uninstall() {
+    const target = opt('--target') || 'claude';
+    if (target === 'cursor') return uninstallCursor();
+    if (target !== 'claude') {
+      console.error(`Unknown --target: ${target}. Supported: claude, cursor`);
+      process.exit(1);
+    }
     const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
     if (!fs.existsSync(settingsFile)) { console.log('No ~/.claude/settings.json found.'); return; }
     const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
@@ -676,8 +768,10 @@ COMMANDS:
   policy disable <check> [--project]  Disable a check category
   policy enable <check>               Re-enable a disabled check
   report [--since 7d] [--format json]
-  install                             Wire hooks into ~/.claude/settings.json
-  uninstall                           Remove Knox hooks
+  install [--target claude|cursor]    Wire hooks. Default target: claude
+                                      claude → ~/.claude/settings.json
+                                      cursor → ~/.cursor/hooks.json
+  uninstall [--target claude|cursor]  Remove Knox hooks (default: claude)
   upgrade                             Update to latest version
   help                                Show this message
 

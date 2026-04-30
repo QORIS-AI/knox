@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+'use strict';
+const path = require('path');
+const PLUGIN_ROOT = process.env.KNOX_ROOT || process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
+const { runEngine, buildResponse } = require(path.join(PLUGIN_ROOT, 'lib', 'adapter-cursor'));
+const { loadConfig } = require(path.join(PLUGIN_ROOT, 'lib', 'config'));
+const { writeAudit } = require(path.join(PLUGIN_ROOT, 'lib', 'audit'));
+const { incrementDenial, recordCrossDenial } = require(path.join(PLUGIN_ROOT, 'lib', 'state'));
+
+let inputData = '';
+const STDIN_CAP = 10 * 1024 * 1024;
+process.stdin.on('data', chunk => {
+  inputData += chunk;
+  if (inputData.length > STDIN_CAP) {
+    process.stderr.write('Knox: stdin exceeds 10MB cap\n');
+    process.exit(0); // fail-open on malformed input — Cursor sets failClosed:true on shell/MCP
+  }
+});
+process.stdin.on('end', () => {
+  let event;
+  try { event = JSON.parse(inputData); } catch { process.exit(0); }
+
+  const config = loadConfig();
+  const sessionId = event.conversation_id || event.session_id || 'unknown';
+  const project = process.env.KNOX_PROJECT_DIR ||
+                  process.env.CURSOR_PROJECT_DIR ||
+                  process.env.CLAUDE_PROJECT_DIR ||
+                  (Array.isArray(event.workspace_roots) ? event.workspace_roots[0] : process.cwd());
+
+  const { result, toolName, preview, eventName } = runEngine(event, config);
+
+  if (result && result.blocked) {
+    writeAudit(config.audit.path, {
+      session_id: sessionId,
+      hook_event: eventName,
+      tool_name: toolName,
+      action: 'deny',
+      operation_preview: preview || JSON.stringify(event.tool_input || {}),
+      _preview_chars: config.audit.command_preview_chars || 120,
+      rule_id: result.ruleId,
+      rule_label: result.ruleId,
+      risk: result.risk,
+      reason: result.reason,
+      policy_preset: config.preset,
+      project,
+      host: 'cursor'
+    });
+
+    let additionalCtx = null;
+    if (!isCheckDisabled(config, 'escalation_tracking')) {
+      const state = incrementDenial(sessionId, config.escalation.session_threshold);
+      const crossCount = recordCrossDenial(sessionId, config.escalation.agent_window_hours);
+      if (state.flagged || crossCount >= config.escalation.agent_threshold) {
+        additionalCtx = `Knox ESCALATION: ${state.denial_count} denial(s) this session. Cross-session: ${crossCount}/${config.escalation.agent_threshold} (${config.escalation.agent_window_hours}h). Security policy is active and working correctly.`;
+      }
+    }
+
+    const isCritical = result.risk === 'critical' || result.critical;
+    if (isCritical) {
+      // Cursor honors stderr + exit 2 as a hard block on shell hooks; the JSON
+      // response is also emitted so non-shell events get the right shape.
+      process.stderr.write(result.reason + '\n');
+      const { response } = buildResponse(eventName, result, config, additionalCtx);
+      process.stdout.write(JSON.stringify(response) + '\n');
+      process.exit(2);
+    }
+
+    const { response } = buildResponse(eventName, result, config, additionalCtx);
+    process.stdout.write(JSON.stringify(response) + '\n');
+    process.exit(0);
+  }
+
+  if (result && result.sanitized) {
+    const { response } = buildResponse(eventName, result, config);
+    process.stdout.write(JSON.stringify(response) + '\n');
+    process.exit(0);
+  }
+
+  if (config.audit.include_allowed && preview) {
+    writeAudit(config.audit.path, {
+      session_id: sessionId,
+      hook_event: eventName,
+      tool_name: toolName,
+      action: 'allow',
+      operation_preview: preview,
+      _preview_chars: config.audit.command_preview_chars || 120,
+      policy_preset: config.preset,
+      project,
+      host: 'cursor'
+    });
+  }
+
+  process.exit(0);
+});
+
+function isCheckDisabled(config, name) {
+  return Array.isArray(config.disabled_checks) && config.disabled_checks.includes(name);
+}
