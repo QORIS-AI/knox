@@ -1,32 +1,140 @@
-# Knox — Claude Code Security Plugin
+# Knox — Security enforcement for AI coding agents
 
-Knox is an out-of-process security enforcement plugin for Claude Code. It intercepts every tool call before execution, runs as a separate Node.js process outside Claude's context, and cannot be disabled by prompt injection or poisoned CLAUDE.md files.
+Knox is a security policy engine for AI coding agents. The same engine ships in three forms — a standalone CLI, a Node library, and a Claude Code plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
 
-## Install
+## Pick a surface
 
-Knox is distributed via the Qoris marketplace. You need to add it once, then install.
-
-```bash
-# Step 1 — Add the Qoris marketplace (one-time, per machine)
-claude plugin marketplace add qoris-ai/qoris-marketplace
-
-# Step 2 — Install Knox
-claude plugin install knox@qoris
+```
+                  ┌─────────────────┐
+                  │   lib/check.js  │   ← single policy engine
+                  │   88 blocklist  │     (regex + tokenized parsers +
+                  │   rules + 17    │     unwrapper + exfil/redirect
+                  │   parser layers │     analyzers + script inspector)
+                  └────────┬────────┘
+                           │
+       ┌───────────────────┼────────────────────┐
+       ▼                   ▼                    ▼
+┌────────────┐      ┌─────────────┐      ┌──────────────┐
+│  CLI       │      │  Library    │      │  Hook entry  │
+│  bin/knox  │      │ lib/index.js│      │  scripts     │
+│            │      │             │      │  (Claude     │
+│  Inspect,  │      │  Embed in   │      │   Code &     │
+│  dry-run,  │      │  your own   │      │   Cursor)    │
+│  configure │      │  runtime    │      │              │
+└────────────┘      └─────────────┘      └──────────────┘
 ```
 
-That's it. Knox is now active in every Claude Code session.
+### Capability matrix — what each surface actually does
 
-**Other install options:**
+| Capability | CLI alone | Library | Claude Code plugin (auto-wires hooks) |
+|---|:---:|:---:|:---:|
+| `knox check` (programmatic dry-run, JSON in/out) | ✅ | ✅ | ✅ |
+| `knox test` (human-readable dry-run) | ✅ | — | ✅ |
+| `knox audit`, `knox report`, `knox status` | ✅ (read) | — | ✅ |
+| `knox policy add-block / disable / lint / export` | ✅ | — | ✅ |
+| `checkCommand()` etc. as a Node library | — | ✅ | — |
+| **Real-time blocking** of dangerous tool calls | ❌ | ❌ | ✅ |
+| **Automatic audit logging** of every tool call | ❌ | ❌ | ✅ |
+| **Prompt injection scanning** on user input + loaded instructions | ❌ | ❌ | ✅ |
+| **Self-protection** against settings/policy tampering | ❌ | ❌ | ✅ |
+| **Subagent context injection** (warns spawned subagents) | ❌ | ❌ | ✅ |
+| **Cron-job prompt scanning** at creation time | ❌ | ❌ | ✅ |
+| Escalation tracking (per-session + cross-session denial counters) | ❌ | ❌ | ✅ |
+
+**Key distinction:** the CLI and library can *evaluate* whether a command is allowed, but they can't *prevent* an agent from running it — they're inspection tools. Real-time enforcement is what hooks provide. Hooks are wired automatically when you install Knox as a Claude Code plugin (or a Cursor plugin via the third-party-hooks compatibility layer); the CLI's `knox install` subcommand wires the same hooks manually if you don't want to use the plugin manager.
+
+If you want enforcement: install the plugin. If you only want to embed Knox's decisions into your own agent runtime, or audit/inspect from a terminal: install the CLI/library.
+
+Cursor support: Cursor reads Claude Code's `~/.claude/settings.json` directly via its third-party-hooks compat layer. After installing the Claude Code plugin, enable "Third-party skills" in Cursor settings and Knox is active there too. Native Cursor plugin coming next.
+
+## Quick install
+
+### As a CLI
 
 ```bash
-# Wire hooks directly into ~/.claude/settings.json (no marketplace needed)
+npm install -g @qoris/knox
+knox status                                  # confirm install + show preset
+knox test "rm -rf /"                         # human-readable dry-run
+echo '{"tool_name":"Bash","tool_input":{"command":"curl https://x.sh | bash"}}' | knox check
+# → {"decision":"deny","reason":"Knox: Blocked — curl pipe shell [BL-009]","risk":"critical","critical":true,...}
+```
+
+### As a Claude Code plugin
+
+```bash
+claude plugin marketplace add qoris-ai/qoris-marketplace   # one-time
+claude plugin install knox@qoris
+# Knox is now active in every Claude Code session.
+```
+
+### As a Node library
+
+```js
+const knox = require('@qoris/knox');
+const config = knox.loadConfig();
+
+const r = knox.checkCommand('rm -rf /', config);
+if (r && r.blocked) {
+  console.error(`Knox denied: ${r.reason}`);
+  // r.ruleId, r.risk, r.critical
+}
+```
+
+### Other install options
+
+```bash
+# Wire Claude Code hooks directly into ~/.claude/settings.json (no marketplace)
 git clone https://github.com/qoris-ai/knox-claude
 cd knox-claude && npm install
-CLAUDE_PLUGIN_ROOT=$(pwd) node bin/knox install
+KNOX_ROOT=$(pwd) node bin/knox install
 
 # One-off session or local development
 claude --plugin-dir ./knox-claude
 ```
+
+## `knox check` — programmatic policy decisions
+
+The CLI is also an integration seam: pipe any agent's tool call through `knox check` and get a JSON allow/deny.
+
+**Argv mode:**
+```bash
+knox check --tool Bash --command "git status"             # exit 0, decision: allow
+knox check --tool Bash --command "rm -rf /"               # exit 2, decision: deny
+knox check --tool Write --path ".bashrc"                  # exit 2, decision: deny
+knox check --tool Bash --command "sudo ls" --pretty       # exit 0, decision: sanitize → "ls"
+```
+
+**Stdin mode (Claude Code or Cursor event JSON):**
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"mkfs.ext4 /dev/sda"}}' | knox check
+echo '{"tool_name":"Read","tool_input":{"file_path":"~/.ssh/id_rsa"}}' | knox check
+```
+
+**Output schema** (one JSON line):
+```json
+{ "decision": "allow", "tool": "Bash", "preview": "..." }
+{ "decision": "deny",  "tool": "Bash", "reason": "...", "ruleId": "BL-009", "risk": "critical", "critical": true }
+{ "decision": "sanitize", "tool": "Bash", "command": "ls /tmp", "reason": "Knox: sudo stripped" }
+```
+
+**Exit codes:** `0` for allow / sanitize / non-critical deny, `2` for critical block. Mirrors Claude Code's PreToolUse hook semantics.
+
+`knox check` is a stateless dry-run — it does **not** write to the audit log. For audited decisions (the production hook path), use `bin/knox-check` which is the actual hook entry point.
+
+## What the Claude Code plugin adds on top of the CLI
+
+The plugin is the **enforcement surface**. Installing it via `claude plugin install knox@qoris` (or `knox install` from the CLI) does one thing: it wires 11 hook entries into `~/.claude/settings.json`. Each hook is a tiny Node script that Claude Code spawns at lifecycle events (PreToolUse, UserPromptSubmit, etc.), reads the event payload on stdin, and writes back an allow/deny decision. The decisions come from the **same `lib/check.js` engine** the CLI uses — no parallel implementation, no drift.
+
+What's locked in by the hook layer that the CLI alone can't deliver:
+
+- **In-flight blocking.** PreToolUse hooks can return `permissionDecision: deny` or exit 2 to halt the tool call. The CLI returns the same JSON, but it has no way to interpose between Claude and its own tool execution.
+- **Continuous audit.** PostToolUse fires after every tool call (allow, deny, or failure) and writes an entry to `~/.local/share/knox/audit/YYYY-MM-DD.jsonl`. The CLI's `knox audit` reads this; without the plugin nothing writes to it.
+- **Prompt-injection erasure.** UserPromptSubmit can `exit 2` to *erase* a poisoned prompt from the model's context entirely (a Claude Code feature; the CLI has no analog).
+- **Self-protection.** ConfigChange hooks block any settings.json edit that tries to disable Knox's hooks. Without the plugin, an agent can edit `~/.claude/settings.json` freely.
+- **Subagent briefing.** SubagentStart returns `additionalContext` injected into the subagent's first system message — without it, spawned subagents start with no awareness that Knox is active.
+- **Escalation state.** Per-session denial counters (3+ denials → `flagged`) and cross-session sliding-window counters (10/hour → agent flagged) only get incremented when hooks see real denials.
+
+In short: install the plugin if you want Knox to *enforce*. Use the CLI standalone if you want to *inspect, configure, audit, or embed* without enforcement.
 
 ---
 
@@ -444,20 +552,20 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 
 ---
 
-## Technical specs (v1.1.4)
+## Technical specs (v2.0.0)
 
 - **Node.js 20+** required (zero npm runtime deps)
-- **Claude Code v2.1.98+** required
-- **87 blocklist patterns** across 8 attack categories (destruction, exfiltration, execution, persistence, mining, escalation, network, self_protection)
+- **Claude Code v2.1.98+** required for the plugin install path
+- **88 blocklist patterns** across 8 attack categories (destruction, exfiltration, execution, persistence, mining, escalation, network, self_protection)
 - **Tokenized parsers** for `rm`, `find`, interpreter inline code (`python -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`)
 - **Recursive unwrap** of `bash -c`, `eval`, `$(...)`, backticks, `<(...)`, delimiter splits (`;`, `&&`, `||`) — depth-bounded (4 levels)
 - **5 self-protection rules** that cannot be disabled: env-var override, knox file mutation, alias shadow, process kill, variable indirection
 - **Exfiltration conjunction detection** — secret-path read + egress verb in same command
 - **Redirect target parsing** — `>`, `>>`, `tee`, `cp`, `mv`, `ln`, `install` destinations fed through protected path check
 - **17 script content patterns** covering Python, Node.js, Shell, Ruby, Perl
-- **38 per-language inline code patterns** (Python, JS, Perl, Ruby, PHP)
+- **51 per-language inline code patterns** (Python, JS, Perl, Ruby, PHP)
 - **6 prompt injection patterns** (`ignore-previous-instructions`, system tags, jailbreak, admin mode, etc.)
-- **322 unit tests** + 25-command real-pipeline benchmark, all passing
+- **371 unit tests** including standalone-CLI / library-export / sibling-path-regression suites, all passing
 - **~80ms average hook latency** end-to-end (Node.js process spawn + check)
 - Red-team verified: **1.1% bypass rate** (2 of 184 commands) on Opus clean adversarial run
 - Atomic writes everywhere (tmp + rename) — state never corrupts on crash

@@ -4,8 +4,11 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT ||
-  path.resolve(path.dirname(process.argv[1]), '..');
+// Use __dirname (real location of this file) not process.argv[1] (which
+// resolves to ~/.nvm/.../bin/knox for global npm symlinks, not the package).
+const PLUGIN_ROOT = process.env.KNOX_ROOT ||
+  process.env.CLAUDE_PLUGIN_ROOT ||
+  path.resolve(__dirname, '..');
 
 // Lazy-load lib modules (PLUGIN_ROOT must be set first)
 function lib(name) { return require(path.join(PLUGIN_ROOT, 'lib', name)); }
@@ -232,6 +235,188 @@ const COMMANDS = {
     }
   },
 
+  // ── knox check: machine-readable policy decisions over stdin/stdout ──────────
+  // Reads a JSON event payload on stdin (same shape Claude Code / Cursor send to
+  // PreToolUse hooks) and writes a JSON decision to stdout. Exit code mirrors
+  // hook semantics: 0 = allow/sanitize/non-critical block, 2 = critical block.
+  //
+  // Usage:
+  //   echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | knox check
+  //   echo '{"file_path":".bashrc"}' | knox check --tool Write
+  //   knox check --tool Bash --command "git status"        (no stdin needed)
+  //   knox check --tool Bash --command "..." --pretty      (human-readable)
+  //
+  // Output (JSON, one line):
+  //   { "decision": "allow" }
+  //   { "decision": "sanitize", "command": "...", "reason": "..." }
+  //   { "decision": "deny", "reason": "...", "ruleId": "...", "risk": "...", "critical": false }
+  check() {
+    const { checkCommand, checkWritePath, checkReadPath, checkInjection, isCheckDisabled } = lib('check');
+    const config = lib('config').loadConfig();
+    const pretty = flag('--pretty');
+    const explicitTool = opt('--tool');
+    const explicitCommand = opt('--command');
+    const explicitPath = opt('--path') || opt('--file-path');
+
+    // Helper: extract every string value from an object (recursive, depth 3).
+    // Used for MCP injection scanning — same logic as bin/knox-check.
+    function extractStringValues(obj, depth) {
+      if (!depth) depth = 0;
+      if (depth > 3) return [];
+      if (typeof obj === 'string') return [obj];
+      if (Array.isArray(obj)) return obj.flatMap(v => extractStringValues(v, depth + 1));
+      if (obj && typeof obj === 'object') return Object.values(obj).flatMap(v => extractStringValues(v, depth + 1));
+      return [];
+    }
+
+    function emit(result, toolName, preview) {
+      // Translate the raw lib result into a stable wire format.
+      let payload;
+      if (!result) {
+        payload = { decision: 'allow' };
+      } else if (result.sanitized) {
+        payload = {
+          decision: 'sanitize',
+          command: result.sanitizedCommand,
+          reason: result.reason,
+          ruleId: result.ruleId,
+          risk: result.risk
+        };
+      } else {
+        payload = {
+          decision: 'deny',
+          reason: result.reason,
+          ruleId: result.ruleId,
+          risk: result.risk,
+          critical: result.risk === 'critical' || result.critical === true
+        };
+      }
+      payload.tool = toolName;
+      if (preview !== undefined) payload.preview = String(preview).slice(0, 200);
+
+      if (pretty) {
+        if (payload.decision === 'allow') {
+          console.log(`✓ ALLOW — ${toolName} — passes ${config.preset} policy`);
+        } else if (payload.decision === 'sanitize') {
+          console.log(`~ SANITIZE — ${toolName}\n  → "${payload.command}"\n  Reason: ${payload.reason}`);
+        } else {
+          console.log(`✗ DENY — ${toolName}${payload.critical ? ' [CRITICAL]' : ''}\n  Rule: ${payload.ruleId} | Risk: ${payload.risk}\n  Reason: ${payload.reason}`);
+        }
+      } else {
+        process.stdout.write(JSON.stringify(payload) + '\n');
+      }
+
+      // Exit code: mirror hook semantics so callers can branch on $?.
+      if (payload.decision === 'deny' && payload.critical) process.exit(2);
+      process.exit(0);
+    }
+
+    function decide(toolName, input) {
+      let result = null;
+      if (['Bash', 'Monitor', 'PowerShell', 'Shell'].includes(toolName)) {
+        const command = input.command || '';
+        result = checkCommand(command, config);
+        emit(result, toolName, command);
+      } else if (toolName === 'Read') {
+        if (!isCheckDisabled(config, 'read_path_protection')) {
+          const filePath = input.file_path || input.path || '';
+          result = checkReadPath(filePath, config);
+          if (result) result.risk = 'high';
+        }
+        emit(result, toolName, input.file_path || input.path);
+      } else if (['Write', 'Edit', 'NotebookEdit'].includes(toolName)) {
+        const filePath = input.file_path || input.path || '';
+        result = checkWritePath(filePath, config);
+        emit(result, toolName, filePath);
+      } else if (toolName === 'MultiEdit') {
+        const paths = [input.file_path, ...((input.edits || []).map(e => e.file_path))].filter(Boolean);
+        for (const fp of paths) {
+          result = checkWritePath(fp, config);
+          if (result) break;
+        }
+        emit(result, toolName, paths.join(', '));
+      } else if (toolName.startsWith('mcp__')) {
+        if (!isCheckDisabled(config, 'mcp_inspection')) {
+          for (const v of extractStringValues(input)) {
+            const r = checkInjection(v, config);
+            if (r) { result = { blocked: true, reason: r.reason, ruleId: r.id, risk: 'high' }; break; }
+          }
+        }
+        emit(result, toolName, JSON.stringify(input).slice(0, 200));
+      } else if (toolName === 'UserPromptSubmit') {
+        // Convenience: accept prompt scanning via the same subcommand.
+        const prompt = input.prompt || input.command || '';
+        const r = checkInjection(prompt, config);
+        result = r ? { blocked: true, reason: r.reason, ruleId: r.id, risk: 'high' } : null;
+        emit(result, toolName, prompt);
+      } else {
+        // Unknown tool — allow by default, mirroring hook behavior.
+        emit(null, toolName || 'Unknown');
+      }
+    }
+
+    // ── Argv path: --tool ... --command ... or --tool ... --path ... ──
+    if (explicitTool && (explicitCommand !== null || explicitPath !== null)) {
+      const input = {};
+      if (explicitCommand !== null) input.command = explicitCommand;
+      if (explicitPath !== null) input.file_path = explicitPath;
+      return decide(explicitTool, input);
+    }
+
+    // ── Stdin path: read full event JSON ──
+    // Cap input at 10 MB so a runaway producer can't OOM us. Hook payloads are
+    // typically <10 KB; a 10 MB ceiling is generous for any realistic case.
+    const STDIN_MAX = 10 * 1024 * 1024;
+    let buf = '';
+    let truncated = false;
+    if (process.stdin.isTTY) {
+      console.error('knox check: no stdin and no --command/--path provided');
+      console.error('Usage:');
+      console.error('  echo \'{"tool_name":"Bash","tool_input":{"command":"..."}}\' | knox check');
+      console.error('  knox check --tool Bash --command "..."');
+      console.error('  knox check --tool Write --path "..."');
+      process.exit(1);
+    }
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', chunk => {
+      if (buf.length + chunk.length > STDIN_MAX) {
+        truncated = true;
+        process.stdin.destroy();
+        return;
+      }
+      buf += chunk;
+    });
+    process.stdin.on('end', () => {
+      if (truncated) {
+        console.error(`knox check: stdin exceeded ${STDIN_MAX} bytes — refusing to parse`);
+        process.exit(1);
+      }
+      // Empty stdin + a --tool flag is the user forgetting --command/--path.
+      // Distinguish from "malformed JSON" so the message points at the real fix.
+      if (!buf.trim()) {
+        if (explicitTool) {
+          console.error(`knox check: --tool ${explicitTool} provided but no --command/--path and stdin is empty`);
+          console.error('Either pass --command "..." / --path "..." or pipe a JSON event on stdin.');
+        } else {
+          console.error('knox check: empty stdin and no --tool/--command/--path provided');
+        }
+        process.exit(1);
+      }
+      let event;
+      try { event = JSON.parse(buf); }
+      catch (e) {
+        console.error(`knox check: invalid JSON on stdin: ${e.message}`);
+        process.exit(1);
+      }
+      // Accept either Claude Code shape ({tool_name, tool_input}) or Cursor's
+      // flatter shape ({command, file_path, prompt, ...}). When --tool is set,
+      // it overrides any tool_name in the payload.
+      const toolName = explicitTool || event.tool_name || event.toolName || '';
+      const input = event.tool_input || event.toolInput || event;
+      decide(toolName, input);
+    });
+  },
+
   policy() {
     const sub = rawArgs[0];
     const config = lib('config').loadConfig();
@@ -451,14 +636,20 @@ const COMMANDS = {
     const { execSync } = require('child_process');
     const isNpm = PLUGIN_ROOT.includes('node_modules');
     if (isNpm) {
-      execSync('npm install -g knox-claude@latest', { stdio: 'inherit' });
+      // Match the published package name; falls through to qorisai scope if
+      // someone installed from there.
+      const pkgName = require(path.join(PLUGIN_ROOT, 'package.json')).name;
+      execSync(`npm install -g ${pkgName}@latest`, { stdio: 'inherit' });
     } else {
       execSync('claude plugin update knox', { stdio: 'inherit' });
     }
   },
 
   help() {
-    console.log(`Knox — Claude Code Security Plugin v1.0.0
+    const pkg = require(path.join(PLUGIN_ROOT, 'package.json'));
+    console.log(`Knox v${pkg.version} — Security enforcement for AI coding agents
+
+Works as: a standalone CLI · a Claude Code plugin · a Cursor plugin (via third-party hooks).
 
 USAGE:
   knox <command> [options]
@@ -467,8 +658,13 @@ COMMANDS:
   status                              Show preset, denial count, escalation state
   audit [N] [--since 1h] [--denied-only] [--tail] [--page N]
                                       Review audit log entries (default: 20, paginated)
-  test "command"                      Dry-run a command against active policy
-  verify                              Run 12 test vectors, confirm hooks
+  test "command"                      Dry-run a command against active policy (human-friendly)
+  check [--tool X --command Y | --path Y] [--pretty]
+                                      Programmatic policy check. Reads JSON event
+                                      from stdin (Claude Code/Cursor hook shape) OR
+                                      uses --tool + --command/--path. Emits JSON
+                                      decision; exit 2 = critical block.
+  verify                              Run policy test vectors, confirm install
   policy list                         Show all active rules
   policy add-block "pat" [--label x] [--risk high]
   policy add-allow "pat" [--label x]

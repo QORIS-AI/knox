@@ -1,15 +1,23 @@
 {
-  "name": "knox",
-  "version": "1.2.3",
-  "description": "Security enforcement layer for Claude Code. Blocks dangerous commands, audits every tool call, detects prompt injection.",
+  "name": "@qoris/knox",
+  "version": "2.0.0",
+  "description": "Security enforcement layer for AI coding agents (Claude Code, Cursor, custom runtimes). Blocks dangerous commands, audits every tool call, detects prompt injection. Usable as a CLI, a Node library, or a plugin.",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./check": "./lib/check.js",
+    "./config": "./lib/config.js",
+    "./patterns": "./lib/patterns.js"
+  },
   "bin": {
-    "knox": "./bin/knox"
+    "knox": "bin/knox"
   },
   "scripts": {
     "test": "jest --testPathPattern=tests/unit",
     "test:integration": "jest --testPathPattern=tests/integration/hook-flow",
     "test:live": "jest --testPathPattern=tests/integration/live-claude --testTimeout=120000",
-    "test:scenarios": "jest --testPathPattern=tests/integration/scenarios --runInBand --testTimeout=300000"
+    "test:scenarios": "jest --testPathPattern=tests/integration/scenarios --runInBand --testTimeout=300000",
+    "prepublishOnly": "npm test"
   },
   "devDependencies": {
     "jest": "^29.0.0"
@@ -19,22 +27,44 @@
     "bin/",
     "lib/",
     "policies/",
-    "skills/",
+    "skills/allow/",
+    "skills/audit/",
+    "skills/block/",
+    "skills/help/",
+    "skills/policy/",
+    "skills/report/",
+    "skills/status/",
     "hooks/",
     "scripts/",
     "openclaw.bundle.json"
   ],
-  "engines": { "node": ">=20" },
-  "keywords": ["claude-code", "security", "plugin", "enforcement"],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "claude-code",
+    "cursor",
+    "ai-agent",
+    "security",
+    "plugin",
+    "enforcement",
+    "policy",
+    "hooks"
+  ],
   "author": "Qoris <apps@qoris.ai> (https://qoris.ai)",
   "homepage": "https://qoris.ai/knox",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qoris-ai/knox-claude"
+    "url": "git+https://github.com/qoris-ai/knox-claude.git"
   },
   "license": "MIT",
   "openclaw": {
-    "hostTargets": ["claude-code"],
+    "hostTargets": [
+      "claude-code"
+    ],
     "bundleFormat": "claude-code-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

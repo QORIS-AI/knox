@@ -1,5 +1,38 @@
 # Knox Changelog
 
+## [2.0.0] — 2026-04-30
+
+Major release. Knox becomes a three-way artifact — a standalone CLI, a Claude Code plugin (existing), and (next phase) a Cursor plugin — sharing a single source tree. No behavior changes for existing Claude Code installs; everything additive or backwards-compatible.
+
+### Added
+- **Standalone CLI on npm.** Package renamed `knox` → `@qoris/knox`. `npm install -g @qoris/knox` puts `knox` on PATH; `npm install @qoris/knox` exposes the policy engine as a Node library via `require('@qoris/knox')`.
+- **`knox check` subcommand** — programmatic policy decisions. Reads either a JSON event payload on stdin (Claude Code `{tool_name, tool_input}` or Cursor flat shape) OR `--tool X --command Y` / `--tool X --path Y` argv. Emits one-line JSON `{decision, reason?, ruleId?, risk?, command?, critical?}`; exit 2 for critical block, 0 otherwise. `--pretty` for human-readable output.
+- **Library export.** `lib/index.js` re-exports `checkCommand`, `checkWritePath`, `checkReadPath`, `checkInjection`, `loadConfig`, `getBlocklistForPreset`. `package.json` declares an `exports` map so consumers can `require('@qoris/knox')` or `require('@qoris/knox/check')`. Internal modules (parsers, tokenize, unwrap, exfil, redirect) remain hidden.
+- **`KNOX_*` env vars** with precedence over the legacy `CLAUDE_*` aliases: `KNOX_ROOT`, `KNOX_DATA_DIR`, `KNOX_PROJECT_DIR`, `KNOX_WEBHOOK`, `KNOX_AUDIT_PATH`. `CLAUDE_*` versions remain supported indefinitely.
+- **`prepublishOnly` script** that runs the unit suite before `npm publish` so a broken build can never ship.
+- **Tests:** 16 new tests in `tests/unit/cli-check.test.js` (argv mode, stdin Claude Code shape, Cursor flat shape, error paths, pretty mode, Shell-tool parity, empty-stdin error). New `tests/unit/lib-export.test.js` validates the library API surface and `exports` map. Plus 9 regression tests in `tests/unit/v11-self-protection.test.js` for sibling-path false positives. 371 / 371 tests pass.
+
+### Changed
+- **`PLUGIN_ROOT` resolution uses `__dirname`, not `process.argv[1]`.** The old approach broke for global npm installs where `argv[1]` resolves to the npm bin symlink (`~/.nvm/.../bin/knox`) rather than the package root. `__dirname` always points to the actual source location.
+- **`CLAUDE_PLUGIN_DATA` is only honored when its path actually points at a Knox dir** (`/knox/i` regex, segment-anchored). Claude Code reuses that env var for whichever plugin is currently active; running the CLI inside a session where a *sibling* plugin was active would otherwise leak Knox's audit log to the wrong directory.
+- **Default data directory for fresh installs is `~/.local/share/knox`** (matches plugin.json's advertised default). Existing installs are detected and keep using the legacy `~/.claude/plugins/data/knox/` path so audit history is preserved.
+- **Help banner** now shows real `package.json` version and describes Knox as "Security enforcement for AI coding agents" rather than "Claude Code Security Plugin v1.0.0" (which was both stale and too narrow).
+
+### Fixed
+- **BL-028 false positive on sibling paths.** The previous regex `rm.*\.knox` (no word boundary) matched `rm ~/.knoxapp/cache`, blocking unrelated user files. New regex anchors at path-segment boundaries (`\.knox(?:[/\s]|$)`); covers `~/.knox`, `~/.local/share/knox`, and `plugins/data/knox` consistently.
+- **`isKnoxProtectedTarget` prefix-startsWith bug.** `expanded.startsWith(pExp)` (no trailing separator) made any path with a matching string prefix a "protected target". Phase 1's addition of `~/.local/share/knox` exposed it (sibling `~/.local/share/knoxville-data` was being blocked as critical). Replaced bare `startsWith` with separator-anchored matching.
+- **Cursor-tool parity in `bin/knox-check`.** Hook entry point now also matches `Shell` (Cursor's name for the bash tool) in addition to `Bash`/`Monitor`/`PowerShell`. Keeps the CLI and hook entry points in lockstep.
+- **`knox check` error messages.** Empty stdin with `--tool` flag now reports "no --command/--path and stdin is empty" instead of "invalid JSON". Stdin reads cap at 10 MB to prevent OOM from runaway producers.
+- **`knox upgrade` package name.** Was hardcoded to `knox-claude@latest` (the old npm name); now reads the actual `package.json` name.
+
+### Self-protection
+- **Added `~/.local/share/knox` and `~/.cursor/hooks.json` to `KNOX_PROTECTED_PATHS`.** The first is the modern data dir; the second prepares for Cursor plugin support.
+- **Added `lib/index.js` to protected files** so the library export entry point can't be tampered with.
+
+### Migration notes
+- Users who installed Knox via `claude plugin install knox@qoris` need do nothing — the plugin manifest still says `knox`. The npm scope rename is invisible from inside Claude Code.
+- Users who installed Knox via the previous unscoped `knox` npm package (if any) should `npm uninstall -g knox` then `npm install -g @qoris/knox`. The audit log and config files are preserved (legacy path detection).
+
 ## [1.2.3] — 2026-04-15
 
 ### Changed

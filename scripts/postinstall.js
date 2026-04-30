@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Absolute path at install time (CLAUDE_PLUGIN_ROOT may not be set in npm context)
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.dirname(__dirname);
+// Absolute path at install time (KNOX_ROOT/CLAUDE_PLUGIN_ROOT may not be set in npm context)
+const PLUGIN_ROOT = process.env.KNOX_ROOT || process.env.CLAUDE_PLUGIN_ROOT || path.dirname(__dirname);
 const SETTINGS_FILE = path.join(os.homedir(), '.claude', 'settings.json');
 
 // Complete hook registration for all 11 event types.

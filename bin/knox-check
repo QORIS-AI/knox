@@ -19,7 +19,7 @@ process.stdin.on('end', () => {
   let result = null;
 
   // Route by tool name
-  if (['Bash', 'Monitor', 'PowerShell'].includes(toolName)) {
+  if (['Bash', 'Monitor', 'PowerShell', 'Shell'].includes(toolName)) {
     const command = input.command || '';
     result = checkCommand(command, config);
   } else if (toolName === 'Read') {
@@ -65,7 +65,7 @@ process.stdin.on('end', () => {
       risk: result.risk,
       reason: result.reason,
       policy_preset: config.preset,
-      project: process.env.CLAUDE_PROJECT_DIR || process.cwd()
+      project: process.env.KNOX_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd()
     });
 
     // Escalation tracking
@@ -121,7 +121,7 @@ process.stdin.on('end', () => {
       operation_preview: input.command || input.file_path || '',
       _preview_chars: config.audit.command_preview_chars || 120,
       policy_preset: config.preset,
-      project: process.env.CLAUDE_PROJECT_DIR || process.cwd()
+      project: process.env.KNOX_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd()
     });
   }
 

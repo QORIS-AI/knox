@@ -121,3 +121,36 @@ describe('v1.1 — P0: legitimate commands still work', () => {
     });
   }
 });
+
+describe('v2.0 — sibling-path false-positive regression (path-segment anchored)', () => {
+  // Phase 1 review found a bug where `expanded.startsWith(pExp)` (no trailing
+  // separator) made any path with a matching string prefix a "protected target".
+  // After adding `~/.local/share/knox` to KNOX_PROTECTED_PATHS, harmless commands
+  // touching siblings (e.g. ~/.local/share/knoxville-data) were blocked. The
+  // fix anchors matches at path-segment boundaries.
+  const siblingsThatMustBeAllowed = [
+    'rm -rf ~/.local/share/knoxville-data',
+    'cp file.txt ~/.local/share/knoxville/',
+    'mv ~/.knoxville-config ~/backup',  // ~/.knoxville is sibling of legacy ~/.knox
+    'rm ~/.knoxapp/cache',              // ~/.knoxapp is NOT ~/.knox
+    'rm -rf ~/.cursor/hooks.jsonbackup', // sibling of ~/.cursor/hooks.json
+  ];
+  for (const cmd of siblingsThatMustBeAllowed) {
+    test(`allows sibling: ${cmd}`, () => {
+      expect(isBlocked(cmd)).toBe(false);
+    });
+  }
+
+  // Verify the actual protected paths are still blocked.
+  const realTargetsThatMustBlock = [
+    'rm -rf ~/.local/share/knox',
+    'rm -rf ~/.local/share/knox/audit',
+    'rm ~/.knox/escalation.json',
+    'rm ~/.cursor/hooks.json',
+  ];
+  for (const cmd of realTargetsThatMustBlock) {
+    test(`blocks real target: ${cmd}`, () => {
+      expect(isBlocked(cmd)).toBe(true);
+    });
+  }
+});
