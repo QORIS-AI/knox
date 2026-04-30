@@ -2,34 +2,34 @@
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "failClosed": true, "timeout": 10 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "failClosed": true, "timeout": 10 }
     ],
     "beforeMCPExecution": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "failClosed": true, "timeout": 5 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "failClosed": true, "timeout": 5 }
     ],
     "beforeReadFile": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 5 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 5 }
     ],
     "preToolUse": [
-      { "matcher": "Write|Edit|MultiEdit|NotebookEdit", "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 5 }
+      { "matcher": "Write|Edit|MultiEdit|NotebookEdit", "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 5 }
     ],
     "beforeSubmitPrompt": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ],
     "sessionStart": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ],
     "sessionEnd": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ],
     "subagentStop": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ],
     "stop": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ],
     "preCompact": [
-      { "command": "${CURSOR_PROJECT_DIR}/bin/run-check-cursor.sh", "timeout": 3 }
+      { "command": "${CURSOR_PLUGIN_ROOT}/bin/run-check-cursor.sh", "timeout": 3 }
     ]
   }
 }

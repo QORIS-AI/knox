@@ -1,12 +1,15 @@
 {
   "name": "knox",
+  "displayName": "Knox Security",
   "version": "2.1.0",
-  "description": "Security enforcement layer for Cursor. Blocks dangerous commands, audits every tool call, detects prompt injection.",
+  "description": "Security enforcement for AI coding agents. Blocks dangerous commands, audits every tool call, detects prompt injection.",
   "author": { "name": "Qoris", "email": "apps@qoris.ai" },
   "homepage": "https://qoris.ai/knox",
   "repository": "https://github.com/qoris-ai/knox",
   "license": "MIT",
+  "category": "developer-tools",
   "keywords": ["security", "enforcement", "audit", "safety", "policy"],
-  "hooks": "hooks/cursor-hooks.json",
-  "skills": "skills/"
+  "tags": ["security", "audit", "policy"],
+  "hooks": "./hooks/cursor-hooks.json",
+  "skills": "./skills/"
 }
