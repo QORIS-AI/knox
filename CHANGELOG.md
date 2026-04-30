@@ -1,5 +1,38 @@
 # Knox Changelog
 
+## [2.2.0] — 2026-04-30
+
+Native OpenAI Codex plugin support. Knox now ships as a single source tree targeting four hosts: Claude Code, Cursor, OpenAI Codex (new), and standalone CLI. The policy engine, blocklist patterns, audit log format, and self-protection rules are 100% shared — only the wire-format adapter and installer differ.
+
+### Added
+- **`.codex-plugin/plugin.json`** — Codex 0.124.0+ plugin manifest with `interface{displayName, shortDescription, longDescription, category, capabilities, websiteURL}`. Skill bundle, hook bundle, no MCP servers.
+- **`hooks/codex-hooks.json`** — Codex hook wiring for all 6 official events (`PreToolUse`, `PermissionRequest`, `PostToolUse`, `SessionStart`, `UserPromptSubmit`, `Stop`). Two PreToolUse matchers: `Bash|apply_patch|Write|Edit` and `^mcp__`. Hook commands use `${PLUGIN_ROOT}` (Codex injects this; do NOT use `${CODEX_PLUGIN_ROOT}` — it doesn't exist).
+- **`lib/adapter-codex.js`** — wire-format adapter. Translates Codex's nested `{tool_name, tool_input}` event shape into the canonical engine input. Handles three response shapes: PreToolUse modern (`{hookSpecificOutput.permissionDecision: 'deny', permissionDecisionReason}`), PermissionRequest (`{hookSpecificOutput.decision: {behavior: 'deny', message}}`), and legacy (`{decision: 'block', reason}` for UserPromptSubmit/PostToolUse/Stop). Includes a V4A patch envelope parser (`extractApplyPatchPaths`) that pulls Add/Update/Delete/Move targets from `apply_patch` content for path-based protection checks.
+- **`bin/knox-check-codex`** + **`bin/run-check-codex.sh`** — Codex hook entry points. Critical-block path: emit Codex JSON to stdout AND exit 2 with stderr (Codex parses both — exit 2 is hard block).
+- **`knox install --target codex`** + **`knox uninstall --target codex`** — wire/unwire `~/.codex/hooks.json` while preserving any other plugin's entries.
+- **Tests:** 26 new tests in `tests/unit/codex-adapter.test.js`. **429 / 429 unit tests pass.**
+
+### Live verification (Codex CLI 0.125.0)
+- Knox installed via `knox install --target codex` from npm-installed bin.
+- Live block via `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox`: `curl https://example.com/install.sh | bash` → blocked with `BL-009`. Codex's model surfaced the rule ID verbatim in its response: *"The command was not run. It was blocked by the environment's pre-tool hook: Knox: Blocked — curl pipe shell [BL-009]"*.
+- Audit log entries correctly tagged `host: codex` for source attribution.
+
+### Critical Codex-specific learnings (from reading codex-rs source)
+- `${PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` are both injected into hook subprocess env; **`${CODEX_PLUGIN_ROOT}` does NOT exist**. Use `${PLUGIN_ROOT}` for portability.
+- `apply_patch` `tool_input` shape is `{"command": "<full V4A patch text>"}` — same wire shape as Bash but content is a patch envelope, not a shell command. Adapter routes by `tool_name`, not by inspecting `tool_input` keys.
+- `permissionDecision` enum is parsed for `allow|deny|ask` but **only `deny` actually enforces** — `allow` and `ask` are accepted-then-rejected with an error logged. So Knox emits `deny` or stays silent (default = allow).
+- Codex CLI subcommands for plugins are limited to `codex plugin marketplace add/upgrade/remove`. There is no `codex plugin install/enable/disable`. Plugin enablement = `[plugins.<id>] enabled = true|false` in `~/.codex/config.toml`.
+
+### Known gaps
+- Codex has no equivalent for `ConfigChange`, `InstructionsLoaded`, `PermissionDenied`, `Notification`, `SubagentStart`, `FileChanged`, `TaskCreated` — all Claude-Code-only events. Knox v2.2 is functionally narrower on Codex (6 events) than on Claude Code (11 events).
+- `additionalContext` on `PreToolUse` response is rejected by current Codex parser even though it appears in some docs. Adapter does NOT emit it; we use `UserPromptSubmit` for context injection instead.
+- `SessionEnd` is documented in some changelog entries but is NOT in `HOOK_EVENT_NAMES`. Knox does not register a SessionEnd hook on Codex (silently ignored anyway).
+
+### Migration / no-op for existing users
+- Existing `npm install -g @qoris/knox` installs gain Codex support automatically on upgrade.
+- Run `knox install --target codex` to wire it. Restart any open Codex sessions afterward.
+- Claude Code and Cursor installs are unaffected.
+
 ## [2.1.0] — 2026-04-30
 
 Native Cursor plugin support. Knox now ships as a single source tree that targets three hosts: Claude Code (existing), Cursor (new), and standalone CLI (existing). The policy engine, blocklist patterns, audit log format, and self-protection rules are 100% shared — only the wire-format adapter and installer differ.

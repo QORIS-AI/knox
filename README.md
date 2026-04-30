@@ -1,6 +1,6 @@
 # Knox — Security enforcement for AI coding agents
 
-Knox is a security policy engine for AI coding agents. The same engine ships in four forms — a standalone CLI, a Node library, a Claude Code plugin, and a Cursor plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
+Knox is a security policy engine for AI coding agents. The same engine ships in five forms — a standalone CLI, a Node library, a Claude Code plugin, a Cursor plugin, and an OpenAI Codex plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
 
 ## Pick a surface
 
@@ -26,22 +26,22 @@ Knox is a security policy engine for AI coding agents. The same engine ships in 
 
 ### Capability matrix — what each surface actually does
 
-| Capability | CLI alone | Library | Claude Code plugin | Cursor plugin |
-|---|:---:|:---:|:---:|:---:|
-| `knox check` (programmatic dry-run, JSON in/out) | ✅ | ✅ | ✅ | ✅ |
-| `knox test` (human-readable dry-run) | ✅ | — | ✅ | ✅ |
-| `knox audit`, `knox report`, `knox status` | ✅ (read) | — | ✅ | ✅ |
-| `knox policy add-block / disable / lint / export` | ✅ | — | ✅ | ✅ |
-| `checkCommand()` etc. as a Node library | — | ✅ | — | — |
-| **Real-time blocking** of dangerous tool calls | ❌ | ❌ | ✅ | ✅ |
-| **Automatic audit logging** of every tool call | ❌ | ❌ | ✅ | ✅ |
-| **Prompt injection scanning** on user input + loaded instructions | ❌ | ❌ | ✅ | ✅ |
-| **Self-protection** against settings/policy tampering | ❌ | ❌ | ✅ | partial† |
-| **Subagent context injection** (warns spawned subagents) | ❌ | ❌ | ✅ | ✅ |
-| **Cron-job prompt scanning** at creation time | ❌ | ❌ | ✅ | n/a |
-| Escalation tracking (per-session + cross-session denial counters) | ❌ | ❌ | ✅ | ✅ |
+| Capability | CLI | Library | Claude Code | Cursor | Codex |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `knox check` (programmatic dry-run) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `knox test` (human-readable dry-run) | ✅ | — | ✅ | ✅ | ✅ |
+| `knox audit / report / status` | ✅ | — | ✅ | ✅ | ✅ |
+| `knox policy add-block / disable / lint / export` | ✅ | — | ✅ | ✅ | ✅ |
+| `checkCommand()` as Node library | — | ✅ | — | — | — |
+| **Real-time blocking** of dangerous tool calls | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **Automatic audit logging** of every tool call | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **Prompt injection scanning** on user input | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **Self-protection** against settings/policy tampering | ❌ | ❌ | ✅ | partial† | partial† |
+| **Subagent context injection** | ❌ | ❌ | ✅ | ✅ | ❌ |
+| **Cron-job prompt scanning** at creation time | ❌ | ❌ | ✅ | n/a | n/a |
+| **Escalation tracking** (denial counters) | ❌ | ❌ | ✅ | ✅ | ✅ |
 
-† Cursor has no `ConfigChange` / `InstructionsLoaded` / `PermissionDenied` event analogues, so a few mid-session self-protection paths only fire on Claude Code. Cron-prompt scanning (`CronCreate`) is Claude Code-only.
+† Cursor and Codex have no `ConfigChange` / `InstructionsLoaded` / `PermissionDenied` event analogues, so a few mid-session self-protection paths only fire on Claude Code. Cron-prompt scanning (`CronCreate`) and SubagentStart are Claude-Code-only.
 
 **Key distinction:** the CLI and library can *evaluate* whether a command is allowed, but they can't *prevent* an agent from running it — they're inspection tools. Real-time enforcement is what hooks provide. Hooks are wired automatically when you install Knox as a Claude Code plugin or a Cursor plugin; the CLI's `knox install [--target claude|cursor]` subcommand wires the same hooks manually if you don't want to use the plugin manager.
 
@@ -77,6 +77,17 @@ knox install --target cursor
 ```
 
 Live-verified against `cursor-agent` 2026.04.29 — `beforeShellExecution`, `beforeMCPExecution`, and `beforeSubmitPrompt` gates fire. cursor-agent surfaces Knox rule IDs back to the user verbatim. Public Cursor marketplace listing pending.
+
+### As an OpenAI Codex plugin
+
+```bash
+npm install -g @qoris/knox
+knox install --target codex
+# → wires ~/.codex/hooks.json with 7 hook entries across 6 events
+# Restart any open Codex sessions. Knox is now active for codex exec / interactive TUI / app.
+```
+
+Live-verified against Codex CLI 0.125.0 — `PreToolUse` (Bash + `apply_patch` + MCP), `PermissionRequest`, and `UserPromptSubmit` all fire. Codex's model surfaces Knox rule IDs back to the user verbatim. Distribution via `codex plugin marketplace add qoris-ai/qoris-marketplace --ref v2.2.0`.
 
 ### As a Node library
 

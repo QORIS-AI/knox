@@ -152,6 +152,100 @@ function uninstallCursor() {
   console.log(`Knox: removed ${removed} hook entries from ~/.cursor/hooks.json`);
 }
 
+// ── Codex install/uninstall helpers ───────────────────────────────────────────
+// Codex reads ~/.codex/hooks.json (project-level .codex/hooks.json takes precedence,
+// but for global wiring we use the user-level file). Same Claude-Code-style nested
+// structure as our own hooks/hooks.json.
+function codexHooksFile() { return path.join(os.homedir(), '.codex', 'hooks.json'); }
+
+function buildCodexEntries(root) {
+  const cmd = `${root}/bin/run-check-codex.sh`;
+  return {
+    PreToolUse: [
+      { matcher: 'Bash|apply_patch|Write|Edit',
+        hooks: [{ type: 'command', command: cmd, timeout: 10, statusMessage: 'Knox policy check' }] },
+      { matcher: '^mcp__',
+        hooks: [{ type: 'command', command: cmd, timeout: 5, statusMessage: 'Knox MCP check' }] }
+    ],
+    PermissionRequest: [
+      { matcher: 'Bash|apply_patch|Write|Edit',
+        hooks: [{ type: 'command', command: cmd, timeout: 5, statusMessage: 'Knox permission check' }] }
+    ],
+    UserPromptSubmit: [
+      { hooks: [{ type: 'command', command: cmd, timeout: 3, statusMessage: 'Knox prompt scan' }] }
+    ],
+    SessionStart: [
+      { hooks: [{ type: 'command', command: cmd, timeout: 3, statusMessage: 'Knox session init' }] }
+    ],
+    PostToolUse: [
+      { hooks: [{ type: 'command', command: cmd, timeout: 5, statusMessage: 'Knox audit' }] }
+    ],
+    Stop: [
+      { hooks: [{ type: 'command', command: cmd, timeout: 3, statusMessage: 'Knox session end' }] }
+    ]
+  };
+}
+
+function isCodexKnoxEntry(entry) {
+  return (entry.hooks || []).some(h =>
+    h && typeof h.command === 'string' && h.command.includes('run-check-codex'));
+}
+
+function installCodex() {
+  const hooksFile = codexHooksFile();
+  let cfg = { hooks: {} };
+  if (fs.existsSync(hooksFile)) {
+    try { cfg = JSON.parse(fs.readFileSync(hooksFile, 'utf8')); }
+    catch { console.warn('Knox: could not parse existing ~/.codex/hooks.json, starting fresh'); }
+  }
+  if (!cfg.hooks) cfg.hooks = {};
+
+  const entries = buildCodexEntries(PLUGIN_ROOT);
+  let wired = 0, skipped = 0;
+  for (const [event, newGroups] of Object.entries(entries)) {
+    if (!cfg.hooks[event]) cfg.hooks[event] = [];
+    for (const group of newGroups) {
+      const present = cfg.hooks[event].some(
+        e => isCodexKnoxEntry(e) && (e.matcher || '') === (group.matcher || ''));
+      if (!present) { cfg.hooks[event].push(group); wired++; }
+      else skipped++;
+    }
+  }
+
+  fs.mkdirSync(path.dirname(hooksFile), { recursive: true });
+  const tmp = hooksFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, hooksFile);
+
+  console.log(`Knox: ${wired} hook entries wired into ~/.codex/hooks.json${skipped ? ` (${skipped} already present)` : ''}.`);
+  console.log('Knox: ensure [features] codex_hooks = true in ~/.codex/config.toml (stable since Codex 0.124.0).');
+  console.log('Knox: restart Codex sessions for hooks to take effect.');
+}
+
+function uninstallCodex() {
+  const hooksFile = codexHooksFile();
+  if (!fs.existsSync(hooksFile)) { console.log('No ~/.codex/hooks.json found.'); return; }
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(hooksFile, 'utf8')); }
+  catch { console.error('Knox: could not parse ~/.codex/hooks.json'); process.exit(1); }
+
+  let removed = 0;
+  if (cfg.hooks) {
+    for (const event of Object.keys(cfg.hooks)) {
+      const before = cfg.hooks[event].length;
+      cfg.hooks[event] = cfg.hooks[event].filter(e => !isCodexKnoxEntry(e));
+      removed += before - cfg.hooks[event].length;
+      if (cfg.hooks[event].length === 0) delete cfg.hooks[event];
+    }
+    if (Object.keys(cfg.hooks).length === 0) delete cfg.hooks;
+  }
+
+  const tmp = hooksFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, hooksFile);
+  console.log(`Knox: removed ${removed} hook entries from ~/.codex/hooks.json`);
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 const COMMANDS = {
@@ -687,8 +781,9 @@ const COMMANDS = {
   install() {
     const target = opt('--target') || 'claude';
     if (target === 'cursor') return installCursor();
+    if (target === 'codex')  return installCodex();
     if (target !== 'claude') {
-      console.error(`Unknown --target: ${target}. Supported: claude, cursor`);
+      console.error(`Unknown --target: ${target}. Supported: claude, cursor, codex`);
       process.exit(1);
     }
     // Delegate to postinstall.js which wires all 11 events
@@ -698,8 +793,9 @@ const COMMANDS = {
   uninstall() {
     const target = opt('--target') || 'claude';
     if (target === 'cursor') return uninstallCursor();
+    if (target === 'codex')  return uninstallCodex();
     if (target !== 'claude') {
-      console.error(`Unknown --target: ${target}. Supported: claude, cursor`);
+      console.error(`Unknown --target: ${target}. Supported: claude, cursor, codex`);
       process.exit(1);
     }
     const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
@@ -768,10 +864,13 @@ COMMANDS:
   policy disable <check> [--project]  Disable a check category
   policy enable <check>               Re-enable a disabled check
   report [--since 7d] [--format json]
-  install [--target claude|cursor]    Wire hooks. Default target: claude
+  install [--target claude|cursor|codex]
+                                      Wire hooks. Default target: claude.
                                       claude → ~/.claude/settings.json
                                       cursor → ~/.cursor/hooks.json
-  uninstall [--target claude|cursor]  Remove Knox hooks (default: claude)
+                                      codex  → ~/.codex/hooks.json
+  uninstall [--target claude|cursor|codex]
+                                      Remove Knox hooks (default: claude)
   upgrade                             Update to latest version
   help                                Show this message
 
