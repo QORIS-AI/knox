@@ -84,12 +84,12 @@ if (r && r.blocked) {
 
 ```bash
 # Wire Claude Code hooks directly into ~/.claude/settings.json (no marketplace)
-git clone https://github.com/qoris-ai/knox-claude
-cd knox-claude && npm install
+git clone https://github.com/qoris-ai/knox
+cd knox && npm install
 KNOX_ROOT=$(pwd) node bin/knox install
 
 # One-off session or local development
-claude --plugin-dir ./knox-claude
+claude --plugin-dir ./knox
 ```
 
 ## `knox check` — programmatic policy decisions
@@ -346,8 +346,8 @@ The red-team results above come from a reproducible harness:
 
 To run the red-team against your own Knox install:
 ```bash
-git clone https://github.com/qoris-ai/knox-claude
-cd knox-claude
+git clone https://github.com/qoris-ai/knox
+cd knox
 claude --model claude-opus-4-6   # then type /redteam in the session
 ```
 

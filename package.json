@@ -55,7 +55,7 @@
   "homepage": "https://qoris.ai/knox",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/qoris-ai/knox-claude.git"
+    "url": "git+https://github.com/qoris-ai/knox.git"
   },
   "license": "MIT",
   "openclaw": {
