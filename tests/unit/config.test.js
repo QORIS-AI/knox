@@ -6,10 +6,32 @@ const fs = require('fs');
 process.env.CLAUDE_PLUGIN_ROOT = path.resolve(__dirname, '../..');
 process.env.CLAUDE_PLUGIN_DATA = path.join(os.tmpdir(), 'knox-config-test-' + Date.now());
 
+// Isolate from any pre-existing ~/.config/knox/config.json on the dev machine.
+// The user-config file sits above plugin-defaults in precedence, so a real config
+// would shadow the boolean env vars these tests set.
+const _userCfgFile = path.join(os.homedir(), '.config', 'knox', 'config.json');
+let _userCfgBackup = null;
+beforeEach(() => {
+  if (fs.existsSync(_userCfgFile)) {
+    _userCfgBackup = fs.readFileSync(_userCfgFile, 'utf8');
+    fs.unlinkSync(_userCfgFile);
+  } else {
+    _userCfgBackup = null;
+  }
+});
 afterEach(() => {
   delete process.env.KNOX_PRESET;
   delete process.env.CLAUDE_PLUGIN_OPTION_PRESET;
   delete process.env.CLAUDE_PLUGIN_OPTION_WEBHOOK;
+  delete process.env.CLAUDE_PLUGIN_OPTION_PRESET_PARANOID;
+  delete process.env.CLAUDE_PLUGIN_OPTION_PRESET_STRICT;
+  delete process.env.CLAUDE_PLUGIN_OPTION_PRESET_STANDARD;
+  delete process.env.CLAUDE_PLUGIN_OPTION_PRESET_MINIMAL;
+  delete process.env.CLAUDE_PLUGIN_OPTION_PRESET_DISABLED;
+  if (_userCfgBackup !== null) {
+    fs.mkdirSync(path.dirname(_userCfgFile), { recursive: true });
+    fs.writeFileSync(_userCfgFile, _userCfgBackup);
+  }
 });
 
 describe('config loading', () => {
@@ -29,12 +51,73 @@ describe('config loading', () => {
     expect(cfg.preset).toBe('strict');
   });
 
-  test('CLAUDE_PLUGIN_OPTION_PRESET overrides preset', () => {
+  test('CLAUDE_PLUGIN_OPTION_PRESET (legacy single-string field) sets preset', () => {
     process.env.CLAUDE_PLUGIN_OPTION_PRESET = 'paranoid';
     jest.resetModules();
     const { loadConfig } = require('../../lib/config');
     const cfg = loadConfig();
     expect(cfg.preset).toBe('paranoid');
+  });
+
+  test('CLAUDE_PLUGIN_OPTION_PRESET_<NAME> boolean sets preset', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_STRICT = 'true';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('strict');
+  });
+
+  test('boolean precedence — most-restrictive wins (paranoid + disabled both true → paranoid)', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_PARANOID = 'true';
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_DISABLED = 'true';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('paranoid');
+  });
+
+  test('boolean precedence — strict + minimal → strict wins', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_STRICT = 'true';
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_MINIMAL = 'true';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('strict');
+  });
+
+  test('disabled boolean alone resolves to disabled', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_DISABLED = 'true';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('disabled');
+  });
+
+  test('booleans set to "false" strings are not treated as enabled', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_PARANOID = 'false';
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_STANDARD = 'true';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('standard');
+  });
+
+  test('KNOX_PRESET env beats userConfig booleans', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_PARANOID = 'true';
+    process.env.KNOX_PRESET = 'minimal';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('minimal');
+  });
+
+  test('boolean and legacy string both set → boolean wins', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET_STRICT = 'true';
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET = 'minimal';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('strict');
   });
 
   test('custom_allowlist and custom_blocklist default to empty arrays', () => {

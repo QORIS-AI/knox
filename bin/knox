@@ -246,6 +246,34 @@ function uninstallCodex() {
   console.log(`Knox: removed ${removed} hook entries from ~/.codex/hooks.json`);
 }
 
+// ── Claude settings helpers ───────────────────────────────────────────────────
+// Used by both `knox uninstall --target claude` and `knox clean-settings`.
+// Strips any hook entry whose command references `knox` from ~/.claude/settings.json,
+// preserving non-Knox entries. Atomic write via .tmp + rename.
+function claudeSettingsFile() { return path.join(os.homedir(), '.claude', 'settings.json'); }
+
+function cleanClaudeSettingsFile() {
+  const settingsFile = claudeSettingsFile();
+  if (!fs.existsSync(settingsFile)) return { present: false, removed: 0, settingsFile };
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  let removed = 0;
+  if (settings.hooks) {
+    for (const event of Object.keys(settings.hooks)) {
+      const before = (settings.hooks[event] || []).length;
+      settings.hooks[event] = (settings.hooks[event] || []).filter(
+        g => !((g.hooks || []).some(h => h && typeof h.command === 'string' && h.command.includes('knox')))
+      );
+      removed += before - settings.hooks[event].length;
+      if (settings.hooks[event].length === 0) delete settings.hooks[event];
+    }
+    if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+  }
+  const tmp = settingsFile + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
+  fs.renameSync(tmp, settingsFile);
+  return { present: true, removed, settingsFile };
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 const COMMANDS = {
@@ -891,13 +919,48 @@ const COMMANDS = {
 
   install() {
     const target = opt('--target') || 'claude';
+    const legacy = flag('--legacy-direct-hooks');
     if (target === 'cursor') return installCursor();
     if (target === 'codex')  return installCodex();
     if (target !== 'claude') {
       console.error(`Unknown --target: ${target}. Supported: claude, cursor, codex`);
       process.exit(1);
     }
-    // Delegate to postinstall.js which wires all 11 events
+
+    // Refuse if the marketplace install is already present — prevents stacking
+    // user-scope hooks on top of plugin-scope hooks (the v<2.3 leak bug).
+    const cacheDir = path.join(os.homedir(), '.claude', 'plugins', 'cache', 'qoris', 'knox');
+    if (fs.existsSync(cacheDir) && !legacy) {
+      console.error('Knox is already installed via the Claude Code marketplace.');
+      console.error(`Use 'claude plugin install knox@qoris' or '/plugin' to manage it.`);
+      console.error('(To force direct-write into ~/.claude/settings.json anyway, pass --legacy-direct-hooks.)');
+      process.exit(0);
+    }
+
+    // Default path: defer to the Claude Code plugin manager. Hooks live in
+    // plugin scope (~/.claude/plugins/cache/qoris/knox/<ver>/hooks/hooks.json)
+    // so enabledPlugins["knox@qoris"]: false properly disables them.
+    if (!legacy) {
+      const { spawnSync } = require('child_process');
+      const probe = spawnSync('claude', ['--version'], { stdio: 'ignore' });
+      if (probe.status === 0) {
+        console.log('Knox: installing via Claude Code marketplace…');
+        const r = spawnSync('claude', ['plugin', 'install', 'knox@qoris'], { stdio: 'inherit' });
+        if (r.status === 0) {
+          console.log('Knox: installed. Run `knox status` to verify, or open `/plugin` in Claude Code to configure presets.');
+          return;
+        }
+        console.error('Knox: `claude plugin install knox@qoris` failed.');
+        console.error('If you need direct settings.json wiring (CI / unsupported environment), re-run with --legacy-direct-hooks.');
+        process.exit(r.status || 1);
+      }
+      console.error('Knox: `claude` CLI not found in PATH.');
+      console.error('Install Claude Code first, then re-run `knox install`.');
+      console.error('(For non-Claude-Code agents that still read ~/.claude/settings.json, use --legacy-direct-hooks.)');
+      process.exit(1);
+    }
+
+    // Legacy direct-write path (opt-in via --legacy-direct-hooks)
     require(path.join(PLUGIN_ROOT, 'scripts', 'postinstall'));
   },
 
@@ -909,26 +972,41 @@ const COMMANDS = {
       console.error(`Unknown --target: ${target}. Supported: claude, cursor, codex`);
       process.exit(1);
     }
-    const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
-    if (!fs.existsSync(settingsFile)) { console.log('No ~/.claude/settings.json found.'); return; }
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-    let removed = 0;
-    if (settings.hooks) {
-      Object.keys(settings.hooks).forEach(event => {
-        const before = (settings.hooks[event] || []).length;
-        settings.hooks[event] = (settings.hooks[event] || []).filter(
-          g => !((g.hooks || []).some(h => h.command && h.command.includes('knox')))
-        );
-        removed += before - settings.hooks[event].length;
-        // Remove the event key entirely if it's now empty — keeps settings.json clean
-        if (settings.hooks[event].length === 0) delete settings.hooks[event];
-      });
-      if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+    const r = cleanClaudeSettingsFile();
+    if (!r.present) { console.log('No ~/.claude/settings.json found.'); return; }
+    console.log(`Knox: removed ${r.removed} hook entries from ~/.claude/settings.json`);
+  },
+
+  preset() {
+    const allowed = ['paranoid', 'strict', 'standard', 'minimal', 'disabled'];
+    const next = positional()[0];
+    if (!next || !allowed.includes(next)) {
+      console.error(`Usage: knox preset <${allowed.join(' | ')}>`);
+      if (next) console.error(`Unknown preset: ${next}`);
+      process.exit(1);
     }
-    const tmp = settingsFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
-    fs.renameSync(tmp, settingsFile);
-    console.log(`Knox: removed ${removed} hook entries from ~/.claude/settings.json`);
+    const userCfgFile = path.join(os.homedir(), '.config', 'knox', 'config.json');
+    fs.mkdirSync(path.dirname(userCfgFile), { recursive: true });
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(userCfgFile, 'utf8')); } catch { /* fresh file */ }
+    cfg.preset = next;
+    const tmp = userCfgFile + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+    fs.renameSync(tmp, userCfgFile);
+    console.log(`Knox preset → ${next}`);
+    console.log(`(written to ${userCfgFile} — this overrides any /plugin UI checkbox)`);
+    console.log('Restart your Claude Code / Cursor / Codex session for the change to take effect.');
+  },
+
+  'clean-settings'() {
+    const r = cleanClaudeSettingsFile();
+    if (!r.present) { console.log('No ~/.claude/settings.json found.'); return; }
+    console.log(`Knox: removed ${r.removed} hook entries from ~/.claude/settings.json`);
+    if (r.removed === 0) {
+      console.log('Nothing to clean — settings.json had no Knox hook entries.');
+    } else {
+      console.log(`Tip: ensure the marketplace install is active with 'claude plugin install knox@qoris' (or '/plugin' in Claude Code).`);
+    }
   },
 
   upgrade() {
@@ -980,18 +1058,30 @@ COMMANDS:
   policy disable <check> [--project]  Disable a check category
   policy enable <check>               Re-enable a disabled check
   report [--since 7d] [--format json]
-  install [--target claude|cursor|codex]
+  install [--target claude|cursor|codex] [--legacy-direct-hooks]
                                       Wire hooks. Default target: claude.
-                                      claude → ~/.claude/settings.json
+                                      claude → defers to 'claude plugin install knox@qoris'
+                                              (--legacy-direct-hooks writes ~/.claude/settings.json)
                                       cursor → ~/.cursor/hooks.json
                                       codex  → ~/.codex/hooks.json
   uninstall [--target claude|cursor|codex]
                                       Remove Knox hooks (default: claude)
+  preset <name>                       Set active preset to one of:
+                                        paranoid | strict | standard | minimal | disabled
+                                      Writes ~/.config/knox/config.json. Restart session
+                                      for changes to take effect. Overrides /plugin UI.
+  clean-settings                      Strip leaked Knox hook entries from
+                                      ~/.claude/settings.json. Use this when migrating
+                                      from pre-v2.3 installs that wrote to user settings.
   upgrade                             Update to latest version
   help                                Show this message
 
-PRESETS: minimal | standard (default) | strict | paranoid
-CONFIG:  .knox.json (project) | .knox.local.json (personal, gitignored)
+PRESETS: paranoid | strict | standard (default) | minimal | disabled
+CONFIG:  /plugin UI checkboxes      → Claude Code only, lowest precedence
+         ~/.config/knox/config.json → user-level CLI default (knox preset writes here)
+         .knox.json                 → project-level
+         .knox.local.json           → project-personal (gitignored)
+         KNOX_PRESET=...            → ad-hoc override, highest precedence
 `);
   }
 };

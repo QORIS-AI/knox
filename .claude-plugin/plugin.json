@@ -1,6 +1,6 @@
 {
   "name": "knox",
-  "version": "1.2.3",
+  "version": "2.3.0",
   "description": "Security enforcement layer for Claude Code. Blocks dangerous commands, audits every tool call, detects prompt injection.",
   "author": { "name": "Qoris", "email": "apps@qoris.ai", "url": "https://qoris.ai" },
   "homepage": "https://qoris.ai/knox",
@@ -8,10 +8,30 @@
   "license": "MIT",
   "keywords": ["security", "enforcement", "audit", "safety", "policy"],
   "userConfig": {
-    "preset": {
-      "title": "Security Preset",
-      "description": "Security preset: minimal | standard | strict | paranoid (default: standard)",
-      "type": "string"
+    "preset_paranoid": {
+      "title": "Paranoid (Max)",
+      "description": "Strict + interactive approval (ask-not-deny) on every block. Highest precedence — wins over any other preset that's also enabled.",
+      "type": "boolean"
+    },
+    "preset_strict": {
+      "title": "Strict",
+      "description": "Standard + path protection + full sudo block. Wins over standard / minimal / disabled if multiple are checked.",
+      "type": "boolean"
+    },
+    "preset_standard": {
+      "title": "Standard (recommended)",
+      "description": "Default. Blocks pipe-to-shell, bash -c, eval, exfiltration. Sanitizes sudo. Wins over minimal / disabled.",
+      "type": "boolean"
+    },
+    "preset_minimal": {
+      "title": "Minimal",
+      "description": "Only blocks miners, destruction, and self-protection violations. Wins over disabled.",
+      "type": "boolean"
+    },
+    "preset_disabled": {
+      "title": "Disabled (audit-only)",
+      "description": "No enforcement. Self-protection rules and audit logging stay on. Lowest precedence — any other preset that's also enabled wins.",
+      "type": "boolean"
     },
     "webhook": {
       "title": "Webhook URL",

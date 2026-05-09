@@ -1,0 +1,9 @@
+{
+  "preset": "disabled",
+  "description": "All blocklist enforcement off. Audit logging stays on. Self-protection rules (preventing rm -rf ~/.config/knox, alias shadowing, env-var bypass) also stay on so the policy can't be uninstalled from inside the agent. Use this when you want full Knox visibility without the friction.",
+  "escalation": { "session_threshold": 999999, "agent_threshold": 999999 },
+  "audit": { "include_allowed": true },
+  "sanitize_sudo": false,
+  "script_inspection": false,
+  "use_ask_not_deny": false
+}

@@ -2,6 +2,15 @@
 
 Knox is a security policy engine for AI coding agents. The same engine ships in five forms — a standalone CLI, a Node library, a Claude Code plugin, a Cursor plugin, and an OpenAI Codex plugin — sharing one source tree and one rule set. Pick the surface that matches what you need.
 
+## Knox in the Qoris Platform
+
+Knox ships in two forms:
+
+- **Developer Knox (this repo)** — free, open source. CLI, library, and plugins for Claude Code, Cursor, and Codex that protect developer agent sessions on your local machine.
+- **Qoris Runtime Knox** — the enterprise version. Built into Qoris worker containers, governing AI workers running 24/7 across sales, ops, compliance, and support workflows. Includes shared memory governance, approval workflows, audit pipelines, and policies that survive across hundreds of concurrent worker sessions.
+
+[Learn more about Qoris Runtime Knox →](https://docs.qoris.ai/knox/overview)
+
 ## Contents
 
 - [Capability matrix](#capability-matrix--what-each-surface-actually-does)
@@ -134,13 +143,35 @@ if (r && r.blocked) {
 ### Other install options
 
 ```bash
-# Wire Claude Code hooks directly into ~/.claude/settings.json (no marketplace)
+# One-off session or local development (auto-loaded when CWD has .claude-plugin/)
+claude --plugin-dir ./knox
+
+# Direct settings.json wiring — only for unsupported environments (CI, custom forks
+# of Claude Code that don't use the marketplace). Hooks land in user scope and won't
+# be managed by /plugin UI. To remove later: knox clean-settings
 git clone https://github.com/qoris-ai/knox
 cd knox && npm install
-KNOX_ROOT=$(pwd) node bin/knox install
+KNOX_ROOT=$(pwd) node bin/knox install --legacy-direct-hooks
+```
 
-# One-off session or local development
-claude --plugin-dir ./knox
+### Migration from Knox <2.3
+
+If you installed Knox via `knox install --target claude` or via the old npm `postinstall`, hooks were written into `~/.claude/settings.json` directly. Those entries live in user scope and the `/plugin` UI's enable/disable toggle can't manage them. Run:
+
+```bash
+knox clean-settings
+claude plugin install knox@qoris   # if you don't already have the marketplace install
+```
+
+`knox clean-settings` strips any hook entry whose command references `knox` from `~/.claude/settings.json`, leaving non-Knox entries alone. Then the marketplace install takes over and `enabledPlugins["knox@qoris"]: false` actually disables the plugin.
+
+### Known gotcha — auto-update
+
+Per [anthropics/claude-code#52218](https://github.com/anthropics/claude-code/issues/52218), `claude plugin update knox@qoris` doesn't always pick up new bundled hooks after a marketplace ref bump. If `/plugin list` doesn't show the latest version, force a clean pull:
+
+```bash
+claude plugin uninstall knox@qoris
+claude plugin install knox@qoris
 ```
 
 ## `knox check` — programmatic policy decisions
@@ -415,23 +446,45 @@ Or programmatic:
 
 | Preset | What It Adds | Use Case |
 |--------|-------------|----------|
+| `disabled` | Audit-only. Self-protection rules + audit logging stay on; everything else off | Debugging Knox itself, low-friction trial runs |
 | `minimal` | Miners, destruction, self-protection | CI/CD, tight allowlists |
 | `standard` *(default)* | + pipe-to-shell, `bash -c`, eval, exfiltration; sanitizes sudo | Developer workstations |
 | `strict` | + sudo denied outright, external curl blocked; logs all commands | Sensitive codebases, payments |
 | `paranoid` | Maximum; uses `ask` not `deny` — every block requires your approval | Production access, secrets |
 
-```bash
-# Set via environment variable
-KNOX_PRESET=strict claude
+`disabled` keeps self-protection rules active so the preset can't be silently uninstalled by an agent (`rm -rf ~/.config/knox`, alias shadowing, env-var bypass all stay blocked). Audit logging stays on. Use it when you want full visibility without the friction.
 
-# Set per-project (.knox.json, committed to git)
-echo '{"preset":"strict"}' > .knox.json
+### How to switch preset
 
-# Set personally (.knox.local.json, gitignored)
-echo '{"preset":"paranoid"}' > .knox.local.json
+**On Claude Code (recommended)** — open `/plugin`, click `knox`, and toggle the 5 checkboxes:
 
-# Changes are live-reloaded — no session restart needed
 ```
+☐ Paranoid (Max)
+☐ Strict
+☑ Standard (recommended)
+☐ Minimal
+☐ Disabled (audit-only)
+```
+
+If you accidentally check more than one, the most-restrictive wins (paranoid > strict > standard > minimal > disabled — fail-closed). Restart your Claude Code session for the change to take effect.
+
+**Anywhere (CLI)** — `knox preset <name>` writes `~/.config/knox/config.json`, which overrides the `/plugin` UI:
+
+```bash
+knox preset strict      # paranoid | strict | standard | minimal | disabled
+```
+
+**Mid-conversation in Claude Code** — type `/knox:preset strict` (slash command, wraps the CLI).
+
+**Per-project** — pin a preset in `.knox.json` (committed) or `.knox.local.json` (personal, gitignored):
+```bash
+echo '{"preset":"strict"}' > .knox.json
+echo '{"preset":"paranoid"}' > .knox.local.json
+```
+
+**Ad-hoc shell** — `KNOX_PRESET=paranoid claude` overrides everything for that one session.
+
+Precedence (high → low): `KNOX_PRESET` env > `.knox.local.json` > `.knox.json` > `~/.config/knox/config.json` (CLI) > `/plugin` UI checkboxes > built-in default `standard`.
 
 ---
 
@@ -462,6 +515,7 @@ echo '{"preset":"paranoid"}' > .knox.local.json
 | `/knox:status` | User + Claude | Preset, today's denial count, escalation state |
 | `/knox:audit [N]` | User + Claude | Last N audit entries (`--since 24h`, `--denied-only`) |
 | `/knox:policy` | User + Claude | Active rules at current preset |
+| `/knox:preset <name>` | User only* | Switch preset (paranoid \| strict \| standard \| minimal \| disabled). Writes `~/.config/knox/config.json`; restart session to apply. |
 | `/knox:allow <pattern>` | User only* | Add to custom allowlist |
 | `/knox:block <pattern>` | User only* | Add to custom blocklist |
 | `/knox:report [window]` | User only* | Security summary (default 24h) |
@@ -647,3 +701,22 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 - Red-team verified: **1.1% bypass rate** (2 of 184 commands) on Opus clean adversarial run
 - Atomic writes everywhere (tmp + rename) — state never corrupts on crash
 - Audit log uses O_APPEND — safe under concurrent sessions
+
+---
+
+## Using Knox in production?
+
+Knox (this repo) protects developer agent sessions on Claude Code, Cursor, and Codex — with real-time blocking, audit logging, and prompt-injection scanning out of the box.
+
+**Qoris Runtime Knox** is the same engine extended for production worker fleets. What it adds on top of OSS Knox:
+
+- **Cross-worker policy bundles** — central policy enforcement across hundreds of concurrent workers, not just one developer's sessions
+- **Multi-tenant memory governance** — memory access controls and write-approval workflows that span workers and humans
+- **Approval routing** — escalations route to the right human, on the right channel, at the right time
+- **Retention & export pipelines** — audit logs streamed to your SIEM/data warehouse, with compliance-grade retention
+- **SSO + RBAC** — enterprise auth on top of the policy engine
+- **24/7 governed operation** — the same Knox engine, hardened for workers running unattended
+
+[Start free →](https://qoris.ai) · [See pricing →](https://qoris.ai/pricing) · [Book a demo →](https://qoris.ai/contact)
+
+[Start free →](https://qoris.ai) · [See pricing →](https://qoris.ai/pricing) · [Book a demo →](https://qoris.ai/contact)

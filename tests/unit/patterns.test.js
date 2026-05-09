@@ -28,6 +28,11 @@ describe('patterns loading', () => {
     expect(strict.length).toBeGreaterThan(standard.length);
   });
 
+  test('disabled preset returns empty blocklist', () => {
+    const disabled = getBlocklistForPreset('disabled');
+    expect(disabled).toEqual([]);
+  });
+
   test('BL-016 xmrig present in minimal preset', () => {
     const minimal = getBlocklistForPreset('minimal');
     expect(minimal.find(p => p.id === 'BL-016')).toBeDefined();

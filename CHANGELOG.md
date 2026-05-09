@@ -1,5 +1,40 @@
 # Knox Changelog
 
+## [2.3.0] — 2026-05-09
+
+Native preset selection in the Claude Code `/plugin` UI, plus a hardened install path that no longer poisons `~/.claude/settings.json`.
+
+### Added
+- **5 boolean preset toggles in `userConfig`** (`preset_paranoid`, `preset_strict`, `preset_standard`, `preset_minimal`, `preset_disabled`) — Claude Code renders them as checkboxes in `/plugin`. If multiple are checked, the most-restrictive wins (`paranoid > strict > standard > minimal > disabled`). Default at first install: `preset_standard: true`.
+
+### Not added (deferred — upstream blocker)
+- **Codex `PreCompact` / `PostCompact` events.** `HOOK_EVENT_NAMES` in `codex-rs/hooks/src/lib.rs` includes both strings, but [openai/codex#17148](https://github.com/openai/codex/issues/17148) is OPEN as of 2026-04-08 — those events aren't wired to fire yet. The scaffolding in source is misleading; the docs at developers.openai.com/codex/hooks list 6 events only. Re-add when upstream lands the firing logic.
+- **`disabled` preset** (`policies/presets/disabled.json`) — soft-disable enforcement (audit-only). Self-protection rules and audit logging stay on; everything else (blocklist, parsers, script inspection, sudo sanitization, injection scanning) skips. Removable from inside the agent is intentionally still blocked so org admins keep control.
+- **`knox preset <name>`** — CLI subcommand that atomically writes `{ preset: <name> }` to `~/.config/knox/config.json`. Validated against the 5 allowed values. User-config-file precedence sits above the `userConfig` UI booleans, so `knox preset` overrides whatever the `/plugin` checkboxes say.
+- **`/knox:preset <name>` slash command** (`skills/preset/SKILL.md`) — wraps `knox preset` so the user can flip preset mid-conversation without leaving Claude Code. `disable-model-invocation: true` so Claude can't autonomously change the security level.
+- **`knox clean-settings`** — CLI subcommand that scrubs leaked Knox hook entries from `~/.claude/settings.json`. Reuses the same logic as `knox uninstall --target claude` via a shared `cleanClaudeSettingsFile()` helper.
+- **Dev-CWD warning** in `bin/run-check.sh`/`run-check-cursor.sh`/`run-check-codex.sh` — one-shot stderr warning if `PLUGIN_ROOT` resolves outside `~/.claude/plugins/cache/`. Catches the "you `cd`'d into the dev tree and Claude auto-loaded it" footgun. Suppressible with `KNOX_DEV_QUIET=1`.
+
+### Changed
+- **`knox install --target claude`** now defaults to `claude plugin install knox@qoris` (subprocess) and refuses if the marketplace install is already present. Old behavior (write 11 hooks directly into `~/.claude/settings.json`) is opt-in via `--legacy-direct-hooks` for unsupported environments. **This is the root-cause fix** for the "every install poisons settings.json" bug — hooks now live exclusively in plugin scope, so `enabledPlugins["knox@qoris"]: false` actually disables them.
+- **`scripts/postinstall.js`** no longer auto-writes hooks to `~/.claude/settings.json` on plain `npm install -g @qoris/knox`. It now prints a one-liner pointing users at `claude plugin install knox@qoris`.
+- **`userConfig.preset` (string)** removed in favor of the 5 booleans. Old installs with `pluginConfigs["knox@qoris"].options.preset = "<name>"` still work — `lib/config.js` falls back to the legacy `CLAUDE_PLUGIN_OPTION_PRESET` env var if no booleans are checked.
+
+### Fixed
+- **`~/.claude/settings.json` leak** that made the `/plugin` UI's enable/disable toggle a no-op for users who installed via `knox install --target claude` or the historical npm `postinstall`.
+- **Manifest version drift**: `.claude-plugin/plugin.json` was stuck at `1.2.3` while the npm package was at `2.2.2`, the cursor manifest at `2.1.0`, and the codex manifest at `2.2.0`. All four are now in sync at `2.3.0`.
+
+### Migration from <2.3
+If you installed Knox before v2.3.0 (specifically via `knox install --target claude` or the old npm `postinstall`), run:
+```
+knox clean-settings
+claude plugin install knox@qoris   # if you don't already have the marketplace install
+```
+This removes the leaked hook entries from `~/.claude/settings.json` and routes everything through the plugin manager going forward.
+
+### Known gotcha — auto-update
+The marketplace ref bump may not be picked up automatically (anthropics/claude-code#52218). If `/plugin list` doesn't show `2.3.0` after running `claude plugin update knox@qoris`, run `claude plugin uninstall knox@qoris && claude plugin install knox@qoris` to force a clean pull.
+
 ## [2.2.1] — 2026-04-30
 
 ### Added
