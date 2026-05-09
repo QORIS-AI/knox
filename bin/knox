@@ -988,6 +988,31 @@ const COMMANDS = {
       if (next) console.error(`Unknown preset: ${next}`);
       process.exit(1);
     }
+
+    // Write to ~/.claude/settings.json[pluginConfigs.knox@qoris.options.preset]
+    // when present, so Claude Code's /plugin UI reflects the change. This is
+    // the authoritative location — Claude Code reads from here at session start
+    // and exports as CLAUDE_PLUGIN_OPTION_PRESET.
+    const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
+    let updatedCC = false;
+    if (fs.existsSync(settingsFile)) {
+      try {
+        const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+        settings.pluginConfigs = settings.pluginConfigs || {};
+        settings.pluginConfigs['knox@qoris'] = settings.pluginConfigs['knox@qoris'] || { options: {} };
+        settings.pluginConfigs['knox@qoris'].options = settings.pluginConfigs['knox@qoris'].options || {};
+        settings.pluginConfigs['knox@qoris'].options.preset = next;
+        const tmp = settingsFile + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
+        fs.renameSync(tmp, settingsFile);
+        updatedCC = true;
+      } catch (e) {
+        console.warn(`Knox: could not update ~/.claude/settings.json (${e.message})`);
+      }
+    }
+
+    // Also write to ~/.config/knox/config.json — fallback for non-Claude-Code
+    // hosts (Cursor / Codex / standalone CLI) that don't get CLAUDE_PLUGIN_OPTION_*.
     const userCfgFile = path.join(os.homedir(), '.config', 'knox', 'config.json');
     fs.mkdirSync(path.dirname(userCfgFile), { recursive: true });
     let cfg = {};
@@ -996,9 +1021,11 @@ const COMMANDS = {
     const tmp = userCfgFile + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
     fs.renameSync(tmp, userCfgFile);
+
     console.log(`Knox preset → ${next}`);
-    console.log(`(written to ${userCfgFile} — this overrides any /plugin UI checkbox)`);
-    console.log('Restart your Claude Code / Cursor / Codex session for the change to take effect.');
+    if (updatedCC) console.log(`  • Claude Code: updated ~/.claude/settings.json (matches /plugin UI)`);
+    console.log(`  • Cursor / Codex / CLI: updated ${userCfgFile}`);
+    console.log(`Restart your session for the change to take effect.`);
   },
 
   'clean-settings'() {

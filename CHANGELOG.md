@@ -1,5 +1,24 @@
 # Knox Changelog
 
+## [2.3.4] — 2026-05-09
+
+Hotfix on top of v2.3.3 — `/plugin` UI changes were silently shadowed by `~/.config/knox/config.json` written by `knox preset` CLI. Reported live: user set `preset: disabled` in `/plugin`, ran `/reload-plugins`, and Knox kept blocking. Two reasons: precedence inversion + the two paths writing to different files.
+
+### Fixed
+- **Precedence flip in `lib/config.js`:** `/plugin` UI (`CLAUDE_PLUGIN_OPTION_*`) now sits ABOVE `~/.config/knox/config.json` instead of below. The user's intent in the UI is the source of truth for the personal default; project files (`.knox.json`, `.knox.local.json`) and the explicit `KNOX_PRESET` env still beat the UI.
+- **`knox preset <name>` CLI now writes to both places at once:**
+  - `~/.claude/settings.json[pluginConfigs.knox@qoris.options.preset]` when Claude Code is installed (so the `/plugin` UI mirrors the change)
+  - `~/.config/knox/config.json` (fallback for Cursor / Codex / standalone CLI that don't get `CLAUDE_PLUGIN_OPTION_*` env vars)
+
+  This means CLI and UI are no longer two separate sources of truth that can drift out of sync.
+
+### Migration
+If you previously ran `knox preset` (any version up through 2.3.3), `~/.config/knox/config.json` may be silently overriding your `/plugin` UI choice. Easiest fix:
+```
+knox preset standard   # or your preferred preset — updates both places
+```
+Or delete the stale file: `rm ~/.config/knox/config.json`.
+
 ## [2.3.3] — 2026-05-09
 
 User-facing copy improvements only. No code changes.
