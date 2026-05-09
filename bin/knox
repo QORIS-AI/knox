@@ -218,8 +218,9 @@ function installCodex() {
   fs.renameSync(tmp, hooksFile);
 
   console.log(`Knox: ${wired} hook entries wired into ~/.codex/hooks.json${skipped ? ` (${skipped} already present)` : ''}.`);
-  console.log('Knox: ensure [features] codex_hooks = true in ~/.codex/config.toml (stable since Codex 0.124.0).');
   console.log('Knox: restart Codex sessions for hooks to take effect.');
+  console.log('Knox: note — Codex hooks live in user scope (~/.codex/hooks.json), not plugin scope, due to upstream openai/codex#16430.');
+  console.log('Knox: this means Codex\'s /plugins toggle does NOT detach Knox. To switch off: `knox preset disabled` (audit-only) or `knox uninstall --target codex` (full off).');
 }
 
 function uninstallCodex() {

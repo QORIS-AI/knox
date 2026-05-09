@@ -69,6 +69,18 @@ Knox ships in two forms:
 
 If you want enforcement: install the plugin. If you only want to embed Knox's decisions into your own agent runtime, or audit/inspect from a terminal: install the CLI/library.
 
+### How "off" works on each surface
+
+A subtle but important asymmetry: **only Claude Code can fully detach Knox via its plugin UI.** On Cursor and Codex, Knox writes hooks into a user-scope file (`~/.cursor/hooks.json` / `~/.codex/hooks.json`) — by design on Cursor (no plugin marketplace for hooks), as a workaround on Codex (upstream [openai/codex#16430](https://github.com/openai/codex/issues/16430) — `manifest.rs` doesn't parse the plugin's `hooks` field).
+
+| Surface | UI toggle off → hooks fire? | True-off paths |
+|---|:---:|---|
+| **Claude Code** | No | `/plugin` disable toggle OR `claude plugin uninstall knox@qoris` |
+| **Cursor** | n/a (no plugin enable/disable for hooks) | `knox uninstall --target cursor` |
+| **Codex** | **Yes** — `/plugins` toggle does NOT detach Knox | `knox uninstall --target codex` |
+
+For Cursor and Codex, `knox preset disabled` (audit-only mode — hooks still fire, return null for everything except self-protect) is the soft-off equivalent. For full detach, you must run `knox uninstall --target <host>`.
+
 ## Quick install
 
 ### As a CLI
@@ -102,30 +114,26 @@ Live-verified against `cursor-agent` 2026.04.29 — `beforeShellExecution`, `bef
 
 ### As an OpenAI Codex plugin
 
-Two install paths — pick one.
-
-**A. Direct hook wiring (simplest):**
 ```bash
 npm install -g @qoris/knox
 knox install --target codex
 # → wires ~/.codex/hooks.json with 7 hook entries across 6 events
+#   (PreToolUse Bash/Edit/Write + ^mcp__, PermissionRequest, UserPromptSubmit, SessionStart, PostToolUse, Stop)
 # Restart any open Codex sessions. Knox is now active for codex exec / interactive TUI / app.
 ```
 
-**B. Via the Codex marketplace (managed by Codex):**
-```bash
-codex plugin marketplace add qoris-ai/qoris-marketplace
-# Then enable the plugin one of two ways:
+**Why this is the only install path for Codex:** Codex's plugin manifest format declares a `hooks` field, but [openai/codex#16430](https://github.com/openai/codex/issues/16430) is open — `manifest.rs` doesn't parse it yet. Until that lands, marketplace-installed plugins can't ship hooks. Knox compensates by writing directly to the user-scope `~/.codex/hooks.json`, which Codex DOES read.
 
-#   • In the Codex TUI, run the /plugins slash command and toggle knox on
-#   • Or edit ~/.codex/config.toml:
-#       [plugins."knox@qoris"]
-#       enabled = true
+**Important: Codex's `/plugins` toggle does NOT detach Knox.** Because Knox's hooks live in user scope (workaround for #16430 above), toggling `enabled = false` in `~/.codex/config.toml [plugins."knox@qoris"]` only affects MCP servers / skills shipped via the plugin manifest — the hooks in `~/.codex/hooks.json` keep firing. To switch Knox off in Codex:
+
+```bash
+knox preset disabled        # audit-only mode (hooks fire, return null except self-protect)
+knox uninstall --target codex   # full off — strips entries from ~/.codex/hooks.json
 ```
 
-Codex doesn't expose `codex plugin install <name>` as a CLI command — enablement is via the TUI's `/plugins` flow or a config.toml edit. That's a Codex limitation; option A is the one-shot equivalent.
+`codex_hooks` does NOT need to be enabled in `~/.codex/config.toml` — it's been default-on since Codex 0.124.0 (PR #19012).
 
-Live-verified against Codex CLI 0.125.0 — `PreToolUse` (Bash + `apply_patch` + MCP), `PermissionRequest`, and `UserPromptSubmit` all fire. Codex's model surfaces Knox rule IDs back to the user verbatim.
+Live-verified against Codex CLI 0.128.0 — `PreToolUse` (Bash + `apply_patch` + MCP), `PermissionRequest`, and `UserPromptSubmit` all fire. Codex's model surfaces Knox rule IDs back to the user verbatim.
 
 ### As a Node library
 
@@ -456,25 +464,25 @@ Or programmatic:
 
 ### How to switch preset
 
-**On Claude Code (recommended)** — open `/plugin`, click `knox`, and toggle the 5 checkboxes:
+**On Claude Code (recommended)** — open `/plugin`, click `knox`, and edit the `preset` field. Allowed values: `paranoid | strict | standard | minimal | disabled`. If you typo, Knox falls back to `standard` and surfaces a warning in `knox status`.
 
 ```
-☐ Paranoid (Max)
-☐ Strict
-☑ Standard (recommended)
-☐ Minimal
-☐ Disabled (audit-only)
+preset: standard          ← edit this
+webhook: <optional>
+audit_path: <optional>
 ```
 
-If you accidentally check more than one, the most-restrictive wins (paranoid > strict > standard > minimal > disabled — fail-closed). Restart your Claude Code session for the change to take effect.
+Restart your Claude Code session for the change to take effect.
 
-**Anywhere (CLI)** — `knox preset <name>` writes `~/.config/knox/config.json`, which overrides the `/plugin` UI:
+**On Cursor or Codex** — neither host has a per-plugin config UI. Use the CLI:
 
 ```bash
 knox preset strict      # paranoid | strict | standard | minimal | disabled
 ```
 
-**Mid-conversation in Claude Code** — type `/knox:preset strict` (slash command, wraps the CLI).
+This writes `~/.config/knox/config.json`, which all three hosts read at session start. On Claude Code it ALSO mirrors into `~/.claude/settings.json[pluginConfigs.knox@qoris.options.preset]` so the `/plugin` UI stays in sync.
+
+**Mid-conversation in Claude Code** — type `/knox:preset strict` (slash command, wraps the CLI). Codex doesn't have a slash-command equivalent — its skills are model-invoked, not user-invoked. Cursor has no slash command surface for plugin-shipped skills.
 
 **Per-project** — pin a preset in `.knox.json` (committed) or `.knox.local.json` (personal, gitignored):
 ```bash
@@ -484,7 +492,7 @@ echo '{"preset":"paranoid"}' > .knox.local.json
 
 **Ad-hoc shell** — `KNOX_PRESET=paranoid claude` overrides everything for that one session.
 
-Precedence (high → low): `KNOX_PRESET` env > `.knox.local.json` > `.knox.json` > `~/.config/knox/config.json` (CLI) > `/plugin` UI checkboxes > built-in default `standard`.
+Precedence (high → low): `KNOX_PRESET` env > `.knox.local.json` > `.knox.json` > `/plugin` UI (Claude Code only, via `CLAUDE_PLUGIN_OPTION_PRESET`) > `~/.config/knox/config.json` (CLI) > built-in default `standard`.
 
 ---
 
@@ -515,7 +523,7 @@ Precedence (high → low): `KNOX_PRESET` env > `.knox.local.json` > `.knox.json`
 | `/knox:status` | User + Claude | Preset, today's denial count, escalation state |
 | `/knox:audit [N]` | User + Claude | Last N audit entries (`--since 24h`, `--denied-only`) |
 | `/knox:policy` | User + Claude | Active rules at current preset |
-| `/knox:preset <name>` | User only* | Switch preset (paranoid \| strict \| standard \| minimal \| disabled). Writes `~/.config/knox/config.json`; restart session to apply. |
+| `/knox:preset <name>` | User only* | Switch preset (paranoid \| strict \| standard \| minimal \| disabled). Writes `~/.config/knox/config.json`; restart session to apply. **Claude Code only** — Cursor and Codex don't surface plugin skills as slash commands; use `knox preset <name>` from a terminal instead. |
 | `/knox:allow <pattern>` | User only* | Add to custom allowlist |
 | `/knox:block <pattern>` | User only* | Add to custom blocklist |
 | `/knox:report [window]` | User only* | Security summary (default 24h) |
@@ -683,7 +691,7 @@ Deploy path: `~/.config/claude/managed-settings.json` (Linux) · `~/Library/Appl
 
 ---
 
-## Technical specs (v2.1.0)
+## Technical specs (v2.3.6)
 
 - **Node.js 20+** required (zero npm runtime deps)
 - **Claude Code v2.1.98+** required for the plugin install path

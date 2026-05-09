@@ -1,5 +1,20 @@
 # Knox Changelog
 
+## [2.3.6] — 2026-05-09
+
+Documentation + install-message cleanup. No engine changes; safe to skip if you've already read the README.
+
+### Changed
+- **`knox install --target codex` no longer tells users to enable `[features] codex_hooks = true`** — that flag has been default-on since Codex 0.124.0 ([codex PR #19012](https://github.com/openai/codex/pull/19012)). The old line was misleading; new users would search `~/.codex/config.toml` for a flag that isn't there.
+- **Install message now warns about the `/plugins` toggle trap on Codex** — because Knox writes hooks to user scope (`~/.codex/hooks.json`) as a workaround for [openai/codex#16430](https://github.com/openai/codex/issues/16430), Codex's `/plugins` enable/disable toggle does NOT detach Knox. The new output explicitly says: "to switch off, run `knox preset disabled` (audit-only) or `knox uninstall --target codex` (full)."
+
+### README
+- **New "How 'off' works on each surface" subsection** under Capability Matrix, with a 3-row table making the Claude Code / Cursor / Codex asymmetry explicit. The key fact: only Claude Code can detach hooks via its plugin UI. Cursor + Codex require `knox uninstall --target <host>` for full off; `knox preset disabled` is the soft-off (audit-only) equivalent.
+- **Codex install section rewritten** — single install path, with an explanation of WHY (`#16430` workaround), an explicit "the /plugins toggle does NOT detach Knox" callout, and the two true-off commands.
+- **"How to switch preset" section restructured by host** — Claude Code uses the `/plugin` UI (single string field as of v2.3.2), Cursor + Codex use `knox preset <name>` CLI, slash command is Claude-Code-only. Precedence stack updated to reflect v2.3.4's UI-above-config-file ordering.
+- **Skills table** now flags `/knox:preset` as Claude-Code-only, with a pointer to `knox preset` CLI for the other two hosts.
+- **Technical specs version bump** from `(v2.1.0)` to `(v2.3.6)` — the footer was stale across multiple releases.
+
 ## [2.3.5] — 2026-05-09
 
 Hotfix on top of v2.3.4 — caught by end-to-end testing right after release.

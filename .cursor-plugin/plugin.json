@@ -1,7 +1,7 @@
 {
   "name": "knox",
   "displayName": "Knox Security",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "description": "Security enforcement for AI coding agents. Blocks dangerous commands, audits every tool call, detects prompt injection.",
   "author": { "name": "Qoris", "email": "apps@qoris.ai" },
   "homepage": "https://qoris.ai/knox",
