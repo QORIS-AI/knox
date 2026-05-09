@@ -1,5 +1,18 @@
 # Knox Changelog
 
+## [2.3.2] — 2026-05-09
+
+The v2.3.0/2.3.1 boolean userConfig design didn't survive contact with Claude Code 2.1.x. The MCPB spec at github.com/anthropics/mcpb says boolean fields render as `Checkbox/toggle`, but Claude Code's `/plugin` UI currently renders them as **text inputs** where the user has to type `true` or `false`. Adding `default: false` (per the MCPB example) didn't change the rendering — that's a Claude Code TUI limitation, not a plugin author fix. Confirmed by zero real plugins using boolean userConfig anywhere on GitHub or in the public marketplace.
+
+### Changed
+- **`userConfig` is now a single `preset` string field** (with `default: "standard"`). Allowed values listed in the field description: `paranoid | strict | standard | minimal | disabled`.
+- **`/knox:preset <name>` slash command and `knox preset <name>` CLI are now the documented preset-switching UX.** Both validate input and exit cleanly on typos. The `/plugin` field still works but is best treated as "set my baseline default."
+- **Invalid `/plugin` input fails closed: typo → `standard`** (built-in default), with a visible warning surfaced in `knox status` (`⚠ /plugin UI has invalid preset 'xyz' — using default 'standard'`). Self-protection + audit + standard enforcement stay on; we never silently disable the plugin on a typo.
+- **lib/config.js still reads the v2.3.0/2.3.1 `CLAUDE_PLUGIN_OPTION_PRESET_<NAME>=true` env vars as a fallback** so users mid-upgrade keep their preset.
+
+### Lesson saved to memory
+`feedback_verify_before_design.md` — when the docs document a capability but zero plugins in the wild use it, treat the doc as forward-looking spec. Verify with at least one of: a working public example, the actual UI tested live, or an open issue tracking the implementation.
+
 ## [2.3.1] — 2026-05-09
 
 Hotfix on top of v2.3.0 — the 5 boolean preset toggles in `userConfig` were missing the `default` field, so Claude Code was rendering them as text inputs ("type true/false here") instead of checkboxes.

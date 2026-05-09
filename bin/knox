@@ -297,6 +297,9 @@ const COMMANDS = {
     const disabledChecks = config.disabled_checks || [];
     const disabledStr = disabledChecks.length ? disabledChecks.join(', ') : 'none';
 
+    const warningLine = config._invalid_preset_input
+      ? `\n  ⚠ /plugin UI has invalid preset '${config._invalid_preset_input}' — using default 'standard'.\n    Fix in /plugin → knox, or run: knox preset <paranoid|strict|standard|minimal|disabled>\n`
+      : '';
     console.log(`Knox status
   Preset:             ${config.preset}
   Session denials:    N/A (CLI context — session state is hook-only)
@@ -305,7 +308,7 @@ const COMMANDS = {
   Audit log:          ${auditDir}
   Plugin data:        ${PLUGIN_DATA}
   Webhook:            ${(config.alerts && config.alerts.webhook) || '(not set)'}
-  Disabled checks:    ${disabledStr}
+  Disabled checks:    ${disabledStr}${warningLine}
 `);
   },
 

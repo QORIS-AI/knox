@@ -111,13 +111,31 @@ describe('config loading', () => {
     expect(cfg.preset).toBe('minimal');
   });
 
-  test('boolean and legacy string both set → boolean wins', () => {
+  test('single-string PRESET wins over legacy boolean fallback (v2.3.2 design)', () => {
     process.env.CLAUDE_PLUGIN_OPTION_PRESET_STRICT = 'true';
     process.env.CLAUDE_PLUGIN_OPTION_PRESET = 'minimal';
     jest.resetModules();
     const { loadConfig } = require('../../lib/config');
     const cfg = loadConfig();
+    expect(cfg.preset).toBe('minimal');
+  });
+
+  test('invalid string PRESET falls back to standard + sets _invalid_preset_input flag', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET = 'no_such_preset';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
+    expect(cfg.preset).toBe('standard');
+    expect(cfg._invalid_preset_input).toBe('no_such_preset');
+  });
+
+  test('valid string PRESET does not set _invalid_preset_input flag', () => {
+    process.env.CLAUDE_PLUGIN_OPTION_PRESET = 'strict';
+    jest.resetModules();
+    const { loadConfig } = require('../../lib/config');
+    const cfg = loadConfig();
     expect(cfg.preset).toBe('strict');
+    expect(cfg._invalid_preset_input).toBeUndefined();
   });
 
   test('custom_allowlist and custom_blocklist default to empty arrays', () => {
