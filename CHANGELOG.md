@@ -1,5 +1,15 @@
 # Knox Changelog
 
+## [2.3.1] — 2026-05-09
+
+Hotfix on top of v2.3.0 — the 5 boolean preset toggles in `userConfig` were missing the `default` field, so Claude Code was rendering them as text inputs ("type true/false here") instead of checkboxes.
+
+### Fixed
+- **Added `default: true|false` to each `preset_*` boolean field** in `.claude-plugin/plugin.json`. The MCPB userConfig spec (canonical schema for Claude Code's plugin manifest, github.com/anthropics/mcpb) shows boolean fields as `Checkbox/toggle` but its only example also includes a `default` value — that value is the rendering hint Claude Code's `/plugin` UI needs to present a checkbox instead of a text input. `preset_standard` defaults to `true`; the other four default to `false`.
+
+### Verified against
+- MCPB MANIFEST.md schema doc which lists `"boolean": Checkbox/toggle` as the rendering for boolean userConfig fields, with the `read_only` example carrying `"default": true`.
+
 ## [2.3.0] — 2026-05-09
 
 Native preset selection in the Claude Code `/plugin` UI, plus a hardened install path that no longer poisons `~/.claude/settings.json`.
